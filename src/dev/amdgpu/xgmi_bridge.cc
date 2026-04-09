@@ -10,6 +10,7 @@
 #include "debug/XGMIBridge.hh"
 #include "dev/amdgpu/amdgpu_device.hh"
 #include "gpu-compute/gpu_command_processor.hh"
+#include "mem/abstract_mem.hh"
 #include "sim/system.hh"
 
 namespace gem5
