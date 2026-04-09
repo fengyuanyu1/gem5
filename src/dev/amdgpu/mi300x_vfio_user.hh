@@ -47,6 +47,28 @@
 
 #undef _Static_assert
 
+// libvfio-user pulls in linux/pci_regs.h, which defines a small set of PCI
+// config-space offsets with spellings that conflict with gem5's pcireg.h.
+// Drop only the overlapping macros before gem5's PCI headers are included.
+#ifdef PCI_CACHE_LINE_SIZE
+#undef PCI_CACHE_LINE_SIZE
+#endif
+#ifdef PCI_LATENCY_TIMER
+#undef PCI_LATENCY_TIMER
+#endif
+#ifdef PCI_HEADER_TYPE
+#undef PCI_HEADER_TYPE
+#endif
+#ifdef PCI_BIST
+#undef PCI_BIST
+#endif
+#ifdef PCI_INTERRUPT_LINE
+#undef PCI_INTERRUPT_LINE
+#endif
+#ifdef PCI_INTERRUPT_PIN
+#undef PCI_INTERRUPT_PIN
+#endif
+
 #include "base/pollevent.hh"
 #include "base/types.hh"
 #include "dev/amdgpu/amdgpu_defines.hh"
