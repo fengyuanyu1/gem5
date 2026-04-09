@@ -9,6 +9,7 @@
 #include "base/trace.hh"
 #include "debug/XGMIBridge.hh"
 #include "dev/amdgpu/amdgpu_device.hh"
+#include "gpu-compute/gpu_command_processor.hh"
 #include "sim/system.hh"
 
 namespace gem5
@@ -147,7 +148,7 @@ XGMIBridge::deliverPacket(XGMIPacket pkt)
             pkt.type == XGMIPacketType::ReadReq ? "ReadReq" : "WriteReq",
             pkt.srcGpu, pkt.addr, pkt.size);
 
-    auto *system = gpuDevice->CP()->shader()->gpuCmdProc.system();
+    auto *system = gpuDevice->CP()->system();
 
     if (pkt.type == XGMIPacketType::WriteReq && !pkt.payload.empty()) {
         // Write payload to local VRAM
