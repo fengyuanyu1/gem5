@@ -608,7 +608,13 @@ def construct_dirs(options, system, ruby_system, network):
 
 
 def construct_gpudirs(
-    options, system, ruby_system, network, addr_offset=0, dir_idx_offset=0
+    options,
+    system,
+    ruby_system,
+    network,
+    addr_offset=0,
+    dir_idx_offset=0,
+    attach_to_system=True,
 ):
     dir_cntrl_nodes = []
     mem_ctrls = []
@@ -724,7 +730,8 @@ def construct_gpudirs(
         dir_cntrl_nodes.append(dir_cntrl)
         mem_ctrls.append(mem_ctrl)
 
-    system.gpu_mem_ctrls = mem_ctrls
+    if attach_to_system:
+        system.gpu_mem_ctrls = mem_ctrls
 
     return dir_cntrl_nodes, mem_ctrls
 

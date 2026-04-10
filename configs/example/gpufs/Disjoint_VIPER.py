@@ -96,13 +96,14 @@ class Disjoint_VIPER(RubySystem):
         for gpu_id in range(num_gpus):
             addr_offset = gpu_id * dgpu_mem_bytes
             dir_idx_offset = gpu_id * options.dgpu_num_dirs
-            (dir_nodes, mem_ctrls) = construct_gpudirs(
+            dir_nodes, mem_ctrls = construct_gpudirs(
                 options,
                 system,
                 self,
                 self.network_gpu,
                 addr_offset=addr_offset,
                 dir_idx_offset=dir_idx_offset,
+                attach_to_system=False,
             )
             all_gpu_dir_nodes.extend(dir_nodes)
             all_gpu_mem_ctrls.extend(mem_ctrls)
