@@ -563,6 +563,28 @@ ComputeUnit::doInvalidate(RequestPtr req, int kernId){
     injectGlobalMemFence(gpuDynInst, true, req);
 }
 
+void
+ComputeUnit::doL2Invalidate(RequestPtr req, int kernId)
+{
+    GPUDynInstPtr gpuDynInst = std::make_shared<GPUDynInst>(
+        this, nullptr, new KernelLaunchStaticInst(), getAndIncSeqNum());
+
+    gpuDynInst->kern_id = kernId;
+
+    req->requestorId(requestorId());
+    req->setPaddr(req->getVaddr());
+    req->setCacheCoherenceFlags(Request::GL2_CACHE_INV);
+    req->setReqInstSeqNum(gpuDynInst->seqNum());
+    req->setFlags(Request::KERNEL);
+
+    auto pkt = new Packet(req, MemCmd::MemSyncReq);
+    pkt->pushSenderState(
+        new ComputeUnit::DataPort::SenderState(gpuDynInst, 0, nullptr));
+
+    EventFunctionWrapper *mem_req_event = memPort[0].createMemReqEvent(pkt);
+    schedule(mem_req_event, curTick() + req_tick_latency);
+}
+
 /**
  * trigger flush operation in the cu
  *
@@ -1040,12 +1062,12 @@ ComputeUnit::DataPort::handleResponse(PacketPtr pkt)
         // wavefront was nullptr when launching kernel, so it is meaningless
         // here (simdId=-1, wfSlotId=-1)
         if (gpuDynInst->isKernelLaunch()) {
-            // for kernel launch, the original request must be both kernel-type
-            // and INV_L1
+            // Kernel launch acquire may invalidate per-CU data caches or
+            // specific TCC lines needed before the dispatch can execute.
             assert(pkt->req->isKernel());
-            assert(pkt->req->isInvL1());
+            assert(pkt->req->isInvL1() || pkt->req->isInvL2());
 
-            // one D-Cache inv is done, decrement counter
+            // one launch invalidate is done, decrement counter
             dispatcher.updateInvCounter(gpuDynInst->kern_id);
 
             delete pkt->senderState;
@@ -1129,6 +1151,9 @@ ComputeUnit::ScalarDataPort::handleResponse(PacketPtr pkt)
 {
     // From scalar cache invalidate that was issued at kernel start.
     if (pkt->req->isKernel()) {
+        SenderState *sender_state = safe_cast<SenderState *>(pkt->senderState);
+        computeUnit->shader->dispatcher().updateInvCounter(
+            sender_state->_gpuDynInst->kern_id);
         delete pkt->senderState;
         delete pkt;
 
@@ -1232,6 +1257,10 @@ ComputeUnit::SQCPort::recvTimingResp(PacketPtr pkt)
             computeUnit->handleSQCReturn(pkt);
         }
     } else {
+        if (pkt->req->isKernel()) {
+            computeUnit->shader->dispatcher().updateInvCounter(
+                sender_state->kernId);
+        }
         delete pkt->senderState;
         delete pkt;
     }
