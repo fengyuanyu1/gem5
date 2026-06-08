@@ -64,6 +64,7 @@ class HSAQueueEntry
     {
         Addr addr;
         Addr size;
+        bool system;
     };
 
     HSAQueueEntry(std::string kernel_name, uint32_t queue_id, int dispatch_id,
@@ -237,9 +238,9 @@ class HSAQueueEntry
     }
 
     void
-    addKernargPhysRange(Addr addr, Addr size)
+    addKernargPhysRange(Addr addr, Addr size, bool system)
     {
-        kernargPhysRanges.push_back({addr, size});
+        kernargPhysRanges.push_back({addr, size, system});
     }
 
     const std::vector<PhysRange> &
