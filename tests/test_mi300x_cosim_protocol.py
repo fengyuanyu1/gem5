@@ -26,34 +26,33 @@ import threading
 import time
 import unittest
 
-
 # ======================================================================
 # Protocol definitions (must match BOTH sides)
 # ======================================================================
 
 # Message types from QEMU's mi300x_gem5.h
-MI300X_MSG_MMIO_READ    = 0x01
-MI300X_MSG_MMIO_WRITE   = 0x02
-MI300X_MSG_DB_READ      = 0x03
-MI300X_MSG_DB_WRITE     = 0x04
-MI300X_MSG_DMA_REQ      = 0x05
-MI300X_MSG_INIT         = 0x06
-MI300X_MSG_SHUTDOWN     = 0x07
-MI300X_MSG_CONFIG_READ  = 0x08
+MI300X_MSG_MMIO_READ = 0x01
+MI300X_MSG_MMIO_WRITE = 0x02
+MI300X_MSG_DB_READ = 0x03
+MI300X_MSG_DB_WRITE = 0x04
+MI300X_MSG_DMA_REQ = 0x05
+MI300X_MSG_INIT = 0x06
+MI300X_MSG_SHUTDOWN = 0x07
+MI300X_MSG_CONFIG_READ = 0x08
 MI300X_MSG_CONFIG_WRITE = 0x09
-MI300X_MSG_FRAME_READ   = 0x0A
-MI300X_MSG_FRAME_WRITE  = 0x0B
+MI300X_MSG_FRAME_READ = 0x0A
+MI300X_MSG_FRAME_WRITE = 0x0B
 
-MI300X_MSG_MMIO_RESP  = 0x81
-MI300X_MSG_IRQ_RAISE  = 0x82
-MI300X_MSG_IRQ_LOWER  = 0x83
-MI300X_MSG_DMA_READ   = 0x84
-MI300X_MSG_DMA_WRITE  = 0x85
-MI300X_MSG_INIT_RESP  = 0x86
+MI300X_MSG_MMIO_RESP = 0x81
+MI300X_MSG_IRQ_RAISE = 0x82
+MI300X_MSG_IRQ_LOWER = 0x83
+MI300X_MSG_DMA_READ = 0x84
+MI300X_MSG_DMA_WRITE = 0x85
+MI300X_MSG_INIT_RESP = 0x86
 
 # Header format: type(u32) size(u32) addr(u64) data(u64) access_size(u32) id(u32)
 # Total: 4 + 4 + 8 + 8 + 4 + 4 = 32 bytes
-MSG_HDR_FORMAT = '<IIQQiI'  # little-endian
+MSG_HDR_FORMAT = "<IIQQiI"  # little-endian
 MSG_HDR_SIZE = struct.calcsize(MSG_HDR_FORMAT)
 
 assert MSG_HDR_SIZE == 32, f"Header size mismatch: {MSG_HDR_SIZE} != 32"
@@ -61,26 +60,28 @@ assert MSG_HDR_SIZE == 32, f"Header size mismatch: {MSG_HDR_SIZE} != 32"
 
 def pack_msg(msg_type, size=0, addr=0, data=0, access_size=0, msg_id=0):
     """Pack a co-simulation message header."""
-    return struct.pack(MSG_HDR_FORMAT,
-                       msg_type, size, addr, data, access_size, msg_id)
+    return struct.pack(
+        MSG_HDR_FORMAT, msg_type, size, addr, data, access_size, msg_id
+    )
 
 
 def unpack_msg(buf):
     """Unpack a co-simulation message header."""
     fields = struct.unpack(MSG_HDR_FORMAT, buf)
     return {
-        'type': fields[0],
-        'size': fields[1],
-        'addr': fields[2],
-        'data': fields[3],
-        'access_size': fields[4],
-        'id': fields[5],
+        "type": fields[0],
+        "size": fields[1],
+        "addr": fields[2],
+        "data": fields[3],
+        "access_size": fields[4],
+        "id": fields[5],
     }
 
 
 # ======================================================================
 # Test: Protocol struct layout compatibility
 # ======================================================================
+
 
 class TestProtocolLayout(unittest.TestCase):
     """Verify the wire format matches between gem5 and QEMU."""
@@ -113,17 +114,21 @@ class TestProtocolLayout(unittest.TestCase):
         self.assertEqual(len(msg), 32)
 
         # type at offset 0 (4 bytes, LE)
-        self.assertEqual(struct.unpack_from('<I', msg, 0)[0], 0xAABBCCDD)
+        self.assertEqual(struct.unpack_from("<I", msg, 0)[0], 0xAABBCCDD)
         # size at offset 4
-        self.assertEqual(struct.unpack_from('<I', msg, 4)[0], 0x11223344)
+        self.assertEqual(struct.unpack_from("<I", msg, 4)[0], 0x11223344)
         # addr at offset 8
-        self.assertEqual(struct.unpack_from('<Q', msg, 8)[0], 0xDEADBEEFCAFEBABE)
+        self.assertEqual(
+            struct.unpack_from("<Q", msg, 8)[0], 0xDEADBEEFCAFEBABE
+        )
         # data at offset 16
-        self.assertEqual(struct.unpack_from('<Q', msg, 16)[0], 0x0102030405060708)
+        self.assertEqual(
+            struct.unpack_from("<Q", msg, 16)[0], 0x0102030405060708
+        )
         # access_size at offset 24
-        self.assertEqual(struct.unpack_from('<I', msg, 24)[0], 0x00000004)
+        self.assertEqual(struct.unpack_from("<I", msg, 24)[0], 0x00000004)
         # id at offset 28
-        self.assertEqual(struct.unpack_from('<I', msg, 28)[0], 0x99887766)
+        self.assertEqual(struct.unpack_from("<I", msg, 28)[0], 0x99887766)
 
     def test_message_type_values(self):
         """Verify all message type enum values match between gem5 and QEMU."""
@@ -168,11 +173,12 @@ class TestProtocolLayout(unittest.TestCase):
 # Test: Mock QEMU client <-> Mock gem5 server socket exchange
 # ======================================================================
 
+
 class TestSocketProtocol(unittest.TestCase):
     """Test the socket protocol with a mock gem5 server."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock', prefix='cosim_test_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_test_")
         self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server_sock.bind(self.sock_path)
         self.server_sock.listen(1)
@@ -186,6 +192,7 @@ class TestSocketProtocol(unittest.TestCase):
 
     def _start_server(self, handler):
         """Start a server thread that accepts one connection."""
+
         def server_worker():
             conn, _ = self.server_sock.accept()
             try:
@@ -212,13 +219,13 @@ class TestSocketProtocol(unittest.TestCase):
             data = conn.recv(MSG_HDR_SIZE)
             self.assertEqual(len(data), MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            self.assertEqual(msg['type'], MI300X_MSG_INIT)
+            self.assertEqual(msg["type"], MI300X_MSG_INIT)
             self.server_responses.append(msg)
 
             # Send INIT_RESP (like gem5 would)
             resp = pack_msg(
                 msg_type=MI300X_MSG_INIT_RESP,
-                msg_id=msg['id'],
+                msg_id=msg["id"],
                 data=vram_size,
             )
             conn.sendall(resp)
@@ -238,9 +245,9 @@ class TestSocketProtocol(unittest.TestCase):
         resp_data = client.recv(MSG_HDR_SIZE)
         self.assertEqual(len(resp_data), MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_INIT_RESP)
-        self.assertEqual(resp['id'], 1)
-        self.assertEqual(resp['data'], vram_size)
+        self.assertEqual(resp["type"], MI300X_MSG_INIT_RESP)
+        self.assertEqual(resp["id"], 1)
+        self.assertEqual(resp["data"], vram_size)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -254,13 +261,13 @@ class TestSocketProtocol(unittest.TestCase):
         def server_handler(conn):
             data = conn.recv(MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            self.assertEqual(msg['type'], MI300X_MSG_MMIO_READ)
-            self.assertEqual(msg['addr'], test_addr)
-            self.assertEqual(msg['access_size'], test_access_size)
+            self.assertEqual(msg["type"], MI300X_MSG_MMIO_READ)
+            self.assertEqual(msg["addr"], test_addr)
+            self.assertEqual(msg["access_size"], test_access_size)
 
             resp = pack_msg(
                 msg_type=MI300X_MSG_MMIO_RESP,
-                msg_id=msg['id'],
+                msg_id=msg["id"],
                 addr=test_addr,
                 data=test_value,
                 access_size=test_access_size,
@@ -281,9 +288,9 @@ class TestSocketProtocol(unittest.TestCase):
 
         resp_data = client.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
-        self.assertEqual(resp['data'], test_value)
-        self.assertEqual(resp['id'], 42)
+        self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
+        self.assertEqual(resp["data"], test_value)
+        self.assertEqual(resp["id"], 42)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -317,10 +324,10 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['type'], MI300X_MSG_MMIO_WRITE)
-        self.assertEqual(received[0]['addr'], test_addr)
-        self.assertEqual(received[0]['data'], test_value)
-        self.assertEqual(received[0]['access_size'], 4)
+        self.assertEqual(received[0]["type"], MI300X_MSG_MMIO_WRITE)
+        self.assertEqual(received[0]["addr"], test_addr)
+        self.assertEqual(received[0]["data"], test_value)
+        self.assertEqual(received[0]["access_size"], 4)
 
     def test_doorbell_write_fire_and_forget(self):
         """Test DB_WRITE (no response expected)."""
@@ -350,9 +357,9 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['type'], MI300X_MSG_DB_WRITE)
-        self.assertEqual(received[0]['addr'], test_addr)
-        self.assertEqual(received[0]['data'], test_value)
+        self.assertEqual(received[0]["type"], MI300X_MSG_DB_WRITE)
+        self.assertEqual(received[0]["addr"], test_addr)
+        self.assertEqual(received[0]["data"], test_value)
 
     def test_irq_raise_from_gem5(self):
         """Test IRQ_RAISE message from gem5 to QEMU."""
@@ -372,8 +379,8 @@ class TestSocketProtocol(unittest.TestCase):
         # QEMU receives IRQ_RAISE
         data = client.recv(MSG_HDR_SIZE)
         msg = unpack_msg(data)
-        self.assertEqual(msg['type'], MI300X_MSG_IRQ_RAISE)
-        self.assertEqual(msg['data'] & 0xFFFF, vector)
+        self.assertEqual(msg["type"], MI300X_MSG_IRQ_RAISE)
+        self.assertEqual(msg["data"] & 0xFFFF, vector)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -396,9 +403,9 @@ class TestSocketProtocol(unittest.TestCase):
             # Read the response from QEMU (header + payload)
             resp_data = conn.recv(MSG_HDR_SIZE)
             resp = unpack_msg(resp_data)
-            self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
+            self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
 
-            payload_size = resp['size']
+            payload_size = resp["size"]
             if payload_size > 0:
                 payload = conn.recv(payload_size)
                 self.assertEqual(payload, fake_data)
@@ -409,14 +416,14 @@ class TestSocketProtocol(unittest.TestCase):
         # QEMU receives DMA_READ
         data = client.recv(MSG_HDR_SIZE)
         msg = unpack_msg(data)
-        self.assertEqual(msg['type'], MI300X_MSG_DMA_READ)
-        self.assertEqual(msg['addr'], dma_addr)
-        self.assertEqual(msg['data'], dma_len)
+        self.assertEqual(msg["type"], MI300X_MSG_DMA_READ)
+        self.assertEqual(msg["addr"], dma_addr)
+        self.assertEqual(msg["data"], dma_len)
 
         # QEMU sends response with guest memory data
         resp = pack_msg(
             msg_type=MI300X_MSG_MMIO_RESP,
-            msg_id=msg['id'],
+            msg_id=msg["id"],
             addr=dma_addr,
             data=dma_len,
             size=dma_len,
@@ -438,8 +445,8 @@ class TestSocketProtocol(unittest.TestCase):
             msg = unpack_msg(data)
             received_msgs.append(msg)
             # Read the DMA payload
-            if msg['size'] > 0:
-                payload_data = conn.recv(msg['size'])
+            if msg["size"] > 0:
+                payload_data = conn.recv(msg["size"])
                 received_msgs.append(payload_data)
 
         self._start_server(server_handler)
@@ -460,9 +467,9 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received_msgs), 2)
-        self.assertEqual(received_msgs[0]['type'], MI300X_MSG_DMA_REQ)
-        self.assertEqual(received_msgs[0]['addr'], dma_addr)
-        self.assertEqual(received_msgs[0]['size'], len(payload))
+        self.assertEqual(received_msgs[0]["type"], MI300X_MSG_DMA_REQ)
+        self.assertEqual(received_msgs[0]["addr"], dma_addr)
+        self.assertEqual(received_msgs[0]["size"], len(payload))
         self.assertEqual(received_msgs[1], payload)
 
     def test_dma_req_read(self):
@@ -474,13 +481,13 @@ class TestSocketProtocol(unittest.TestCase):
         def server_handler(conn):
             data = conn.recv(MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            self.assertEqual(msg['type'], MI300X_MSG_DMA_REQ)
-            self.assertEqual(msg['size'], 0)  # No payload = read request
+            self.assertEqual(msg["type"], MI300X_MSG_DMA_REQ)
+            self.assertEqual(msg["size"], 0)  # No payload = read request
 
             # gem5 reads VRAM and sends response
             resp = pack_msg(
                 msg_type=MI300X_MSG_MMIO_RESP,
-                msg_id=msg['id'],
+                msg_id=msg["id"],
                 addr=dma_addr,
                 data=dma_len,
                 size=dma_len,
@@ -502,8 +509,8 @@ class TestSocketProtocol(unittest.TestCase):
 
         resp_data = client.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
-        self.assertEqual(resp['size'], dma_len)
+        self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
+        self.assertEqual(resp["size"], dma_len)
 
         payload = client.recv(dma_len)
         self.assertEqual(payload, fake_vram_data)
@@ -519,12 +526,12 @@ class TestSocketProtocol(unittest.TestCase):
         def server_handler(conn):
             data = conn.recv(MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            self.assertEqual(msg['type'], MI300X_MSG_CONFIG_READ)
-            self.assertEqual(msg['addr'], test_offset)
+            self.assertEqual(msg["type"], MI300X_MSG_CONFIG_READ)
+            self.assertEqual(msg["addr"], test_offset)
 
             resp = pack_msg(
                 msg_type=MI300X_MSG_MMIO_RESP,
-                msg_id=msg['id'],
+                msg_id=msg["id"],
                 addr=test_offset,
                 data=test_value,
                 access_size=4,
@@ -544,9 +551,9 @@ class TestSocketProtocol(unittest.TestCase):
 
         resp_data = client.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
-        self.assertEqual(resp['data'], test_value)
-        self.assertEqual(resp['id'], 50)
+        self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
+        self.assertEqual(resp["data"], test_value)
+        self.assertEqual(resp["id"], 50)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -579,9 +586,9 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['type'], MI300X_MSG_CONFIG_WRITE)
-        self.assertEqual(received[0]['addr'], test_offset)
-        self.assertEqual(received[0]['data'], test_value)
+        self.assertEqual(received[0]["type"], MI300X_MSG_CONFIG_WRITE)
+        self.assertEqual(received[0]["addr"], test_offset)
+        self.assertEqual(received[0]["data"], test_value)
 
     def test_frame_read_roundtrip(self):
         """Test FRAME_READ -> MMIO_RESP roundtrip for VRAM access."""
@@ -591,11 +598,11 @@ class TestSocketProtocol(unittest.TestCase):
         def server_handler(conn):
             data = conn.recv(MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            self.assertEqual(msg['type'], MI300X_MSG_FRAME_READ)
+            self.assertEqual(msg["type"], MI300X_MSG_FRAME_READ)
 
             resp = pack_msg(
                 msg_type=MI300X_MSG_MMIO_RESP,
-                msg_id=msg['id'],
+                msg_id=msg["id"],
                 addr=test_offset,
                 data=test_value,
                 access_size=4,
@@ -615,8 +622,8 @@ class TestSocketProtocol(unittest.TestCase):
 
         resp_data = client.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
-        self.assertEqual(resp['data'], test_value)
+        self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
+        self.assertEqual(resp["data"], test_value)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -649,9 +656,9 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['type'], MI300X_MSG_FRAME_WRITE)
-        self.assertEqual(received[0]['addr'], test_offset)
-        self.assertEqual(received[0]['data'], test_value)
+        self.assertEqual(received[0]["type"], MI300X_MSG_FRAME_WRITE)
+        self.assertEqual(received[0]["addr"], test_offset)
+        self.assertEqual(received[0]["data"], test_value)
 
     def test_shutdown_message(self):
         """Test SHUTDOWN message from QEMU."""
@@ -676,7 +683,7 @@ class TestSocketProtocol(unittest.TestCase):
         self.server_thread.join(timeout=2)
 
         self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['type'], MI300X_MSG_SHUTDOWN)
+        self.assertEqual(received[0]["type"], MI300X_MSG_SHUTDOWN)
 
     def test_multiple_transactions(self):
         """Test multiple sequential MMIO read transactions."""
@@ -686,13 +693,13 @@ class TestSocketProtocol(unittest.TestCase):
             for i in range(num_txns):
                 data = conn.recv(MSG_HDR_SIZE)
                 msg = unpack_msg(data)
-                self.assertEqual(msg['type'], MI300X_MSG_MMIO_READ)
-                self.assertEqual(msg['id'], i)
+                self.assertEqual(msg["type"], MI300X_MSG_MMIO_READ)
+                self.assertEqual(msg["id"], i)
 
                 resp = pack_msg(
                     msg_type=MI300X_MSG_MMIO_RESP,
                     msg_id=i,
-                    addr=msg['addr'],
+                    addr=msg["addr"],
                     data=0x1000 + i,
                     access_size=4,
                 )
@@ -712,9 +719,9 @@ class TestSocketProtocol(unittest.TestCase):
 
             resp_data = client.recv(MSG_HDR_SIZE)
             resp = unpack_msg(resp_data)
-            self.assertEqual(resp['type'], MI300X_MSG_MMIO_RESP)
-            self.assertEqual(resp['id'], i)
-            self.assertEqual(resp['data'], 0x1000 + i)
+            self.assertEqual(resp["type"], MI300X_MSG_MMIO_RESP)
+            self.assertEqual(resp["id"], i)
+            self.assertEqual(resp["data"], 0x1000 + i)
 
         client.close()
         self.server_thread.join(timeout=2)
@@ -724,11 +731,12 @@ class TestSocketProtocol(unittest.TestCase):
 # Test: Source code cross-validation
 # ======================================================================
 
+
 class TestTwoSocketArchitecture(unittest.TestCase):
     """Test the two-connection architecture (MMIO + Event sockets)."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock', prefix='cosim_2sock_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_2sock_")
         self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server_sock.bind(self.sock_path)
         self.server_sock.listen(2)  # Accept two connections
@@ -757,8 +765,9 @@ class TestTwoSocketArchitecture(unittest.TestCase):
         mmio_client.connect(self.sock_path)
 
         # Send INIT on MMIO socket
-        init_msg = pack_msg(msg_type=MI300X_MSG_INIT, msg_id=1,
-                           data=16 * 1024**3)
+        init_msg = pack_msg(
+            msg_type=MI300X_MSG_INIT, msg_id=1, data=16 * 1024**3
+        )
         mmio_client.sendall(init_msg)
 
         time.sleep(0.1)
@@ -767,17 +776,18 @@ class TestTwoSocketArchitecture(unittest.TestCase):
         self.assertEqual(len(connections), 1)
         data = connections[0].recv(MSG_HDR_SIZE)
         msg = unpack_msg(data)
-        self.assertEqual(msg['type'], MI300X_MSG_INIT)
+        self.assertEqual(msg["type"], MI300X_MSG_INIT)
 
         # Server sends INIT_RESP
-        resp = pack_msg(msg_type=MI300X_MSG_INIT_RESP, msg_id=1,
-                       data=16 * 1024**3)
+        resp = pack_msg(
+            msg_type=MI300X_MSG_INIT_RESP, msg_id=1, data=16 * 1024**3
+        )
         connections[0].sendall(resp)
 
         # Read INIT_RESP on MMIO socket
         resp_data = mmio_client.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MI300X_MSG_INIT_RESP)
+        self.assertEqual(resp["type"], MI300X_MSG_INIT_RESP)
 
         # QEMU second connection: Events
         event_client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -797,20 +807,26 @@ class TestTwoSocketArchitecture(unittest.TestCase):
         # Event client receives IRQ (not MMIO client)
         irq_data = event_client.recv(MSG_HDR_SIZE)
         irq = unpack_msg(irq_data)
-        self.assertEqual(irq['type'], MI300X_MSG_IRQ_RAISE)
-        self.assertEqual(irq['data'] & 0xFFFF, 5)
+        self.assertEqual(irq["type"], MI300X_MSG_IRQ_RAISE)
+        self.assertEqual(irq["data"] & 0xFFFF, 5)
 
         # Simultaneously, MMIO still works independently
-        mmio_read = pack_msg(msg_type=MI300X_MSG_MMIO_READ, msg_id=2,
-                            addr=0xD000, access_size=4)
+        mmio_read = pack_msg(
+            msg_type=MI300X_MSG_MMIO_READ, msg_id=2, addr=0xD000, access_size=4
+        )
         mmio_client.sendall(mmio_read)
 
         mmio_data = connections[0].recv(MSG_HDR_SIZE)
         mmio_msg = unpack_msg(mmio_data)
-        self.assertEqual(mmio_msg['type'], MI300X_MSG_MMIO_READ)
+        self.assertEqual(mmio_msg["type"], MI300X_MSG_MMIO_READ)
 
-        mmio_resp = pack_msg(msg_type=MI300X_MSG_MMIO_RESP, msg_id=2,
-                            addr=0xD000, data=0, access_size=4)
+        mmio_resp = pack_msg(
+            msg_type=MI300X_MSG_MMIO_RESP,
+            msg_id=2,
+            addr=0xD000,
+            data=0,
+            access_size=4,
+        )
         connections[0].sendall(mmio_resp)
 
         mmio_resp_data = mmio_client.recv(MSG_HDR_SIZE)
@@ -848,30 +864,35 @@ class TestTwoSocketArchitecture(unittest.TestCase):
             connections[1].sendall(irq)
 
             # QEMU sends MMIO read on MMIO connection
-            read_msg = pack_msg(msg_type=MI300X_MSG_MMIO_READ, msg_id=i,
-                               addr=0x1000 + i * 4, access_size=4)
+            read_msg = pack_msg(
+                msg_type=MI300X_MSG_MMIO_READ,
+                msg_id=i,
+                addr=0x1000 + i * 4,
+                access_size=4,
+            )
             mmio_client.sendall(read_msg)
 
             # gem5 responds to MMIO on MMIO connection
             req_data = connections[0].recv(MSG_HDR_SIZE)
             req = unpack_msg(req_data)
-            self.assertEqual(req['type'], MI300X_MSG_MMIO_READ)
+            self.assertEqual(req["type"], MI300X_MSG_MMIO_READ)
 
-            resp = pack_msg(msg_type=MI300X_MSG_MMIO_RESP, msg_id=i,
-                           data=0xAA00 + i)
+            resp = pack_msg(
+                msg_type=MI300X_MSG_MMIO_RESP, msg_id=i, data=0xAA00 + i
+            )
             connections[0].sendall(resp)
 
             # QEMU reads MMIO response (guaranteed on MMIO socket, not event)
             resp_data = mmio_client.recv(MSG_HDR_SIZE)
             r = unpack_msg(resp_data)
-            self.assertEqual(r['type'], MI300X_MSG_MMIO_RESP)
-            self.assertEqual(r['data'], 0xAA00 + i)
+            self.assertEqual(r["type"], MI300X_MSG_MMIO_RESP)
+            self.assertEqual(r["data"], 0xAA00 + i)
 
             # Event client reads IRQ (on event socket, not MMIO)
             irq_data = event_client.recv(MSG_HDR_SIZE)
             irq_msg = unpack_msg(irq_data)
-            self.assertEqual(irq_msg['type'], MI300X_MSG_IRQ_RAISE)
-            self.assertEqual(irq_msg['data'] & 0xFFFF, i)
+            self.assertEqual(irq_msg["type"], MI300X_MSG_IRQ_RAISE)
+            self.assertEqual(irq_msg["data"] & 0xFFFF, i)
 
         mmio_client.close()
         event_client.close()
@@ -884,7 +905,7 @@ class TestDriverInitSimulation(unittest.TestCase):
     """Simulate the amdgpu driver init sequence over the protocol."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock', prefix='cosim_drv_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_drv_")
         self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server_sock.bind(self.sock_path)
         self.server_sock.listen(2)
@@ -939,9 +960,12 @@ class TestDriverInitSimulation(unittest.TestCase):
             # Handle INIT
             data = mmio_conn.recv(MSG_HDR_SIZE)
             msg = unpack_msg(data)
-            assert msg['type'] == MI300X_MSG_INIT
-            resp = pack_msg(msg_type=MI300X_MSG_INIT_RESP,
-                           msg_id=msg['id'], data=16 * 1024**3)
+            assert msg["type"] == MI300X_MSG_INIT
+            resp = pack_msg(
+                msg_type=MI300X_MSG_INIT_RESP,
+                msg_id=msg["id"],
+                data=16 * 1024**3,
+            )
             mmio_conn.sendall(resp)
 
             # Handle MMIO reads/writes until shutdown
@@ -951,36 +975,48 @@ class TestDriverInitSimulation(unittest.TestCase):
                     break
                 msg = unpack_msg(data)
 
-                if msg['type'] == MI300X_MSG_SHUTDOWN:
+                if msg["type"] == MI300X_MSG_SHUTDOWN:
                     break
-                elif msg['type'] == MI300X_MSG_MMIO_READ:
-                    addr = msg['addr']
+                elif msg["type"] == MI300X_MSG_MMIO_READ:
+                    addr = msg["addr"]
                     value = reg_map.get(addr, 0)
-                    resp = pack_msg(msg_type=MI300X_MSG_MMIO_RESP,
-                                   msg_id=msg['id'], addr=addr,
-                                   data=value, access_size=4)
+                    resp = pack_msg(
+                        msg_type=MI300X_MSG_MMIO_RESP,
+                        msg_id=msg["id"],
+                        addr=addr,
+                        data=value,
+                        access_size=4,
+                    )
                     mmio_conn.sendall(resp)
-                elif msg['type'] == MI300X_MSG_MMIO_WRITE:
+                elif msg["type"] == MI300X_MSG_MMIO_WRITE:
                     # Accept writes silently (fire-and-forget)
-                    reg_map[msg['addr']] = msg['data']
-                elif msg['type'] == MI300X_MSG_DB_WRITE:
+                    reg_map[msg["addr"]] = msg["data"]
+                elif msg["type"] == MI300X_MSG_DB_WRITE:
                     # Doorbell writes are fire-and-forget
                     pass
-                elif msg['type'] == MI300X_MSG_CONFIG_READ:
-                    addr = msg['addr']
+                elif msg["type"] == MI300X_MSG_CONFIG_READ:
+                    addr = msg["addr"]
                     value = config_map.get(addr, 0)
-                    resp = pack_msg(msg_type=MI300X_MSG_MMIO_RESP,
-                                   msg_id=msg['id'], addr=addr,
-                                   data=value, access_size=4)
+                    resp = pack_msg(
+                        msg_type=MI300X_MSG_MMIO_RESP,
+                        msg_id=msg["id"],
+                        addr=addr,
+                        data=value,
+                        access_size=4,
+                    )
                     mmio_conn.sendall(resp)
-                elif msg['type'] == MI300X_MSG_CONFIG_WRITE:
-                    config_map[msg['addr']] = msg['data']
-                elif msg['type'] == MI300X_MSG_FRAME_READ:
-                    resp = pack_msg(msg_type=MI300X_MSG_MMIO_RESP,
-                                   msg_id=msg['id'], addr=msg['addr'],
-                                   data=0, access_size=4)
+                elif msg["type"] == MI300X_MSG_CONFIG_WRITE:
+                    config_map[msg["addr"]] = msg["data"]
+                elif msg["type"] == MI300X_MSG_FRAME_READ:
+                    resp = pack_msg(
+                        msg_type=MI300X_MSG_MMIO_RESP,
+                        msg_id=msg["id"],
+                        addr=msg["addr"],
+                        data=0,
+                        access_size=4,
+                    )
                     mmio_conn.sendall(resp)
-                elif msg['type'] == MI300X_MSG_FRAME_WRITE:
+                elif msg["type"] == MI300X_MSG_FRAME_WRITE:
                     pass  # fire-and-forget
 
             mmio_conn.close()
@@ -994,28 +1030,48 @@ class TestDriverInitSimulation(unittest.TestCase):
         client.connect(self.sock_path)
 
         # Step 1: INIT handshake
-        init_msg = pack_msg(msg_type=MI300X_MSG_INIT, msg_id=0,
-                           data=16 * 1024**3)
+        init_msg = pack_msg(
+            msg_type=MI300X_MSG_INIT, msg_id=0, data=16 * 1024**3
+        )
         client.sendall(init_msg)
         resp = unpack_msg(client.recv(MSG_HDR_SIZE))
-        self.assertEqual(resp['type'], MI300X_MSG_INIT_RESP)
-        self.assertEqual(resp['data'], 16 * 1024**3)
+        self.assertEqual(resp["type"], MI300X_MSG_INIT_RESP)
+        self.assertEqual(resp["data"], 16 * 1024**3)
 
         # Step 1.5: Read PCI config space (VendorID/DeviceID)
-        client.sendall(pack_msg(msg_type=MI300X_MSG_CONFIG_READ, msg_id=1,
-                               addr=0x00, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_CONFIG_READ,
+                msg_id=1,
+                addr=0x00,
+                access_size=4,
+            )
+        )
         resp = unpack_msg(client.recv(MSG_HDR_SIZE))
-        self.assertEqual(resp['data'], 0x74A11002)  # MI300X
+        self.assertEqual(resp["data"], 0x74A11002)  # MI300X
 
         # Enable PCI BusMaster (config write, fire-and-forget)
-        client.sendall(pack_msg(msg_type=MI300X_MSG_CONFIG_WRITE, msg_id=1,
-                               addr=0x04, data=0x00100007, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_CONFIG_WRITE,
+                msg_id=1,
+                addr=0x04,
+                data=0x00100007,
+                access_size=4,
+            )
+        )
 
         # Step 2: Read MP0 firmware status
-        client.sendall(pack_msg(msg_type=MI300X_MSG_MMIO_READ, msg_id=1,
-                               addr=AMDGPU_MP0_SMN_C2PMSG_33, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_MMIO_READ,
+                msg_id=1,
+                addr=AMDGPU_MP0_SMN_C2PMSG_33,
+                access_size=4,
+            )
+        )
         resp = unpack_msg(client.recv(MSG_HDR_SIZE))
-        self.assertEqual(resp['data'], 0x80000000)
+        self.assertEqual(resp["data"], 0x80000000)
 
         # Step 3: Read FB location registers
         for reg_addr, expected in [
@@ -1023,26 +1079,55 @@ class TestDriverInitSimulation(unittest.TestCase):
             (MI300X_FB_LOCATION_TOP, mmhub_top),
             (MI300X_MEM_SIZE_REG, mem_size),
         ]:
-            client.sendall(pack_msg(msg_type=MI300X_MSG_MMIO_READ,
-                                   msg_id=2, addr=reg_addr, access_size=4))
+            client.sendall(
+                pack_msg(
+                    msg_type=MI300X_MSG_MMIO_READ,
+                    msg_id=2,
+                    addr=reg_addr,
+                    access_size=4,
+                )
+            )
             resp = unpack_msg(client.recv(MSG_HDR_SIZE))
-            self.assertEqual(resp['data'], expected,
-                           f"Register 0x{reg_addr:x} expected {expected} "
-                           f"got {resp['data']}")
+            self.assertEqual(
+                resp["data"],
+                expected,
+                f"Register 0x{reg_addr:x} expected {expected} "
+                f"got {resp['data']}",
+            )
 
         # Step 4: Read GRBM_STATUS
-        client.sendall(pack_msg(msg_type=MI300X_MSG_MMIO_READ, msg_id=3,
-                               addr=0xD000, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_MMIO_READ,
+                msg_id=3,
+                addr=0xD000,
+                access_size=4,
+            )
+        )
         resp = unpack_msg(client.recv(MSG_HDR_SIZE))
-        self.assertEqual(resp['data'], 0)  # GPU idle
+        self.assertEqual(resp["data"], 0)  # GPU idle
 
         # Step 5: Write a config register (fire-and-forget)
-        client.sendall(pack_msg(msg_type=MI300X_MSG_MMIO_WRITE, msg_id=4,
-                               addr=0x1234, data=0xDEADBEEF, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_MMIO_WRITE,
+                msg_id=4,
+                addr=0x1234,
+                data=0xDEADBEEF,
+                access_size=4,
+            )
+        )
 
         # Step 6: Write a doorbell (fire-and-forget)
-        client.sendall(pack_msg(msg_type=MI300X_MSG_DB_WRITE, msg_id=5,
-                               addr=0x100, data=0x42, access_size=4))
+        client.sendall(
+            pack_msg(
+                msg_type=MI300X_MSG_DB_WRITE,
+                msg_id=5,
+                addr=0x100,
+                data=0x42,
+                access_size=4,
+            )
+        )
 
         # Step 7: Shutdown
         client.sendall(pack_msg(msg_type=MI300X_MSG_SHUTDOWN, msg_id=99))
@@ -1058,18 +1143,22 @@ class TestSourceCodeAlignment(unittest.TestCase):
     def _find_gem5_root(self):
         """Find the gem5 source root."""
         path = os.path.dirname(os.path.abspath(__file__))
-        while path != '/':
-            if os.path.exists(os.path.join(path, 'src', 'dev', 'amdgpu',
-                                           'mi300x_gem5_cosim.hh')):
+        while path != "/":
+            if os.path.exists(
+                os.path.join(
+                    path, "src", "dev", "amdgpu", "mi300x_gem5_cosim.hh"
+                )
+            ):
                 return path
             path = os.path.dirname(path)
         return None
 
     def _find_qemu_root(self):
         """Find the QEMU source root."""
-        for path in ['/home/user/qemu-mi300x', '/home/user/qemu']:
-            if os.path.exists(os.path.join(path, 'include', 'hw', 'misc',
-                                           'mi300x_gem5.h')):
+        for path in ["/home/user/qemu-mi300x", "/home/user/qemu"]:
+            if os.path.exists(
+                os.path.join(path, "include", "hw", "misc", "mi300x_gem5.h")
+            ):
                 return path
         return None
 
@@ -1079,28 +1168,29 @@ class TestSourceCodeAlignment(unittest.TestCase):
         if not gem5_root:
             self.skipTest("gem5 source root not found")
 
-        header = os.path.join(gem5_root, 'src', 'dev', 'amdgpu',
-                              'mi300x_gem5_cosim.hh')
+        header = os.path.join(
+            gem5_root, "src", "dev", "amdgpu", "mi300x_gem5_cosim.hh"
+        )
         with open(header) as f:
             content = f.read()
 
         # Verify enum values match QEMU
-        self.assertIn('MmioRead       = 0x01', content)
-        self.assertIn('MmioWrite      = 0x02', content)
-        self.assertIn('DoorbellRead   = 0x03', content)
-        self.assertIn('DoorbellWrite  = 0x04', content)
-        self.assertIn('Init           = 0x06', content)
-        self.assertIn('Shutdown       = 0x07', content)
-        self.assertIn('ConfigRead     = 0x08', content)
-        self.assertIn('ConfigWrite    = 0x09', content)
-        self.assertIn('FrameRead      = 0x0A', content)
-        self.assertIn('FrameWrite     = 0x0B', content)
-        self.assertIn('MmioResp       = 0x81', content)
-        self.assertIn('IrqRaise       = 0x82', content)
-        self.assertIn('IrqLower       = 0x83', content)
-        self.assertIn('DmaRead        = 0x84', content)
-        self.assertIn('DmaWrite       = 0x85', content)
-        self.assertIn('InitResp       = 0x86', content)
+        self.assertIn("MmioRead       = 0x01", content)
+        self.assertIn("MmioWrite      = 0x02", content)
+        self.assertIn("DoorbellRead   = 0x03", content)
+        self.assertIn("DoorbellWrite  = 0x04", content)
+        self.assertIn("Init           = 0x06", content)
+        self.assertIn("Shutdown       = 0x07", content)
+        self.assertIn("ConfigRead     = 0x08", content)
+        self.assertIn("ConfigWrite    = 0x09", content)
+        self.assertIn("FrameRead      = 0x0A", content)
+        self.assertIn("FrameWrite     = 0x0B", content)
+        self.assertIn("MmioResp       = 0x81", content)
+        self.assertIn("IrqRaise       = 0x82", content)
+        self.assertIn("IrqLower       = 0x83", content)
+        self.assertIn("DmaRead        = 0x84", content)
+        self.assertIn("DmaWrite       = 0x85", content)
+        self.assertIn("InitResp       = 0x86", content)
 
     def test_gem5_struct_matches_qemu(self):
         """Check gem5 CosimMsgHeader fields match QEMU MI300XGem5MsgHeader."""
@@ -1108,19 +1198,20 @@ class TestSourceCodeAlignment(unittest.TestCase):
         if not gem5_root:
             self.skipTest("gem5 source root not found")
 
-        header = os.path.join(gem5_root, 'src', 'dev', 'amdgpu',
-                              'mi300x_gem5_cosim.hh')
+        header = os.path.join(
+            gem5_root, "src", "dev", "amdgpu", "mi300x_gem5_cosim.hh"
+        )
         with open(header) as f:
             content = f.read()
 
         # Check struct fields exist in order
-        self.assertIn('uint32_t type;', content)
-        self.assertIn('uint32_t size;', content)
-        self.assertIn('uint64_t addr;', content)
-        self.assertIn('uint64_t data;', content)
-        self.assertIn('uint32_t access_size;', content)
-        self.assertIn('uint32_t id;', content)
-        self.assertIn('sizeof(CosimMsgHeader) == 32', content)
+        self.assertIn("uint32_t type;", content)
+        self.assertIn("uint32_t size;", content)
+        self.assertIn("uint64_t addr;", content)
+        self.assertIn("uint64_t data;", content)
+        self.assertIn("uint32_t access_size;", content)
+        self.assertIn("uint32_t id;", content)
+        self.assertIn("sizeof(CosimMsgHeader) == 32", content)
 
     def test_qemu_struct_fields(self):
         """Check QEMU header defines the expected struct."""
@@ -1128,18 +1219,19 @@ class TestSourceCodeAlignment(unittest.TestCase):
         if not qemu_root:
             self.skipTest("QEMU source root not found")
 
-        header = os.path.join(qemu_root, 'include', 'hw', 'misc',
-                              'mi300x_gem5.h')
+        header = os.path.join(
+            qemu_root, "include", "hw", "misc", "mi300x_gem5.h"
+        )
         with open(header) as f:
             content = f.read()
 
-        self.assertIn('uint32_t type;', content)
-        self.assertIn('uint32_t size;', content)
-        self.assertIn('uint64_t addr;', content)
-        self.assertIn('uint64_t data;', content)
-        self.assertIn('uint32_t access_size;', content)
-        self.assertIn('uint32_t id;', content)
-        self.assertIn('__attribute__((packed))', content)
+        self.assertIn("uint32_t type;", content)
+        self.assertIn("uint32_t size;", content)
+        self.assertIn("uint64_t addr;", content)
+        self.assertIn("uint64_t data;", content)
+        self.assertIn("uint32_t access_size;", content)
+        self.assertIn("uint32_t id;", content)
+        self.assertIn("__attribute__((packed))", content)
 
     def test_qemu_msg_type_values(self):
         """Verify QEMU enum values match our protocol constants."""
@@ -1147,26 +1239,27 @@ class TestSourceCodeAlignment(unittest.TestCase):
         if not qemu_root:
             self.skipTest("QEMU source root not found")
 
-        header = os.path.join(qemu_root, 'include', 'hw', 'misc',
-                              'mi300x_gem5.h')
+        header = os.path.join(
+            qemu_root, "include", "hw", "misc", "mi300x_gem5.h"
+        )
         with open(header) as f:
             content = f.read()
 
-        self.assertIn('MI300X_MSG_MMIO_READ    = 0x01', content)
-        self.assertIn('MI300X_MSG_MMIO_WRITE   = 0x02', content)
-        self.assertIn('MI300X_MSG_DB_READ      = 0x03', content)
-        self.assertIn('MI300X_MSG_DB_WRITE     = 0x04', content)
-        self.assertIn('MI300X_MSG_INIT         = 0x06', content)
-        self.assertIn('MI300X_MSG_SHUTDOWN     = 0x07', content)
-        self.assertIn('MI300X_MSG_MMIO_RESP    = 0x81', content)
-        self.assertIn('MI300X_MSG_IRQ_RAISE    = 0x82', content)
-        self.assertIn('MI300X_MSG_IRQ_LOWER    = 0x83', content)
-        self.assertIn('MI300X_MSG_DMA_READ     = 0x84', content)
-        self.assertIn('MI300X_MSG_DMA_WRITE    = 0x85', content)
-        self.assertIn('MI300X_MSG_INIT_RESP    = 0x86', content)
+        self.assertIn("MI300X_MSG_MMIO_READ    = 0x01", content)
+        self.assertIn("MI300X_MSG_MMIO_WRITE   = 0x02", content)
+        self.assertIn("MI300X_MSG_DB_READ      = 0x03", content)
+        self.assertIn("MI300X_MSG_DB_WRITE     = 0x04", content)
+        self.assertIn("MI300X_MSG_INIT         = 0x06", content)
+        self.assertIn("MI300X_MSG_SHUTDOWN     = 0x07", content)
+        self.assertIn("MI300X_MSG_MMIO_RESP    = 0x81", content)
+        self.assertIn("MI300X_MSG_IRQ_RAISE    = 0x82", content)
+        self.assertIn("MI300X_MSG_IRQ_LOWER    = 0x83", content)
+        self.assertIn("MI300X_MSG_DMA_READ     = 0x84", content)
+        self.assertIn("MI300X_MSG_DMA_WRITE    = 0x85", content)
+        self.assertIn("MI300X_MSG_INIT_RESP    = 0x86", content)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("=" * 70)
     print("MI300X gem5-QEMU Co-simulation Protocol Integration Test")
     print("=" * 70)

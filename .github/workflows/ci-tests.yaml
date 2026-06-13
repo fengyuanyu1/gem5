@@ -79,7 +79,7 @@ jobs:
         strategy:
             matrix:
                 type: [fast, opt]
-        runs-on: [self-hosted, linux, x64]
+        runs-on: ubuntu-24.04
         if: github.event.pull_request.draft == false
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
         needs: [pre-commit] # only runs if pre-commit passes.
@@ -137,7 +137,7 @@ jobs:
         # Clang is more strict than GCC. This job checks that gem5 compiles
         # with Clang. It compiles build/ALL/gem5.fast to maximize the change
         # for compilation error to be exposed.
-        runs-on: [self-hosted, linux, x64]
+        runs-on: ubuntu-24.04
         if: github.event.pull_request.draft == false
         container: ghcr.io/gem5/clang-version-19:latest
         needs: [pre-commit]
@@ -145,6 +145,26 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - name: Clang Compilation
+              working-directory: ${{ github.workspace }}
+              run: scons build/ALL/gem5.fast -j $(nproc)
+
+    vfio-user-compilation:
+        runs-on: ubuntu-24.04
+        if: github.event.pull_request.draft == false
+        container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
+        needs: [pre-commit]
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Install vfio-user dependencies
+              run: |
+                  apt-get update
+                  apt-get install -y libjson-c-dev
+
+            - name: Build vfio-user backend
               working-directory: ${{ github.workspace }}
               run: scons build/ALL/gem5.fast -j $(nproc)
 
@@ -188,7 +208,7 @@ jobs:
               timeout-minutes: 90
 
     testlib-quick-gem5-builds:
-        runs-on: [self-hosted, linux, x64]
+        runs-on: ubuntu-24.04
         if: github.event.pull_request.draft == false
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
         needs: [pre-commit, testlib-quick-matrix, get-date]
@@ -233,7 +253,7 @@ jobs:
 
     testlib-quick-execution:
         name: quick-tests
-        runs-on: [self-hosted, linux, x64]
+        runs-on: ubuntu-24.04
         if: github.event.pull_request.draft == false
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
         needs: [pre-commit, testlib-quick-matrix, testlib-quick-gem5-builds]
@@ -281,7 +301,7 @@ jobs:
                   retention-days: 30
 
     gpu-tests:
-        runs-on: [self-hosted, linux, x64]
+        runs-on: ubuntu-24.04
         container: ghcr.io/gem5/gcn-gpu:latest
         timeout-minutes: 180
         needs: [pre-commit, get-date]
@@ -321,6 +341,7 @@ jobs:
             - unittests-all-fast-opt
             - macos-compilation
             - pre-commit
+            - vfio-user-compilation
             - gpu-tests
         steps:
             - run: echo "This job's status is ${{ job.status }}."

@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "params/XGMIBridge.hh"
-#include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -80,8 +79,6 @@ class XGMIBridge : public SimObject
 
     uint64_t bandwidthBps;
     Tick linkLatency;
-    int numLanes;
-    int maxLinks;
     int creditCount;
 
     uint64_t vramSizePerGpu;
@@ -103,9 +100,6 @@ class XGMIBridge : public SimObject
 
     /** Called by event: return credit to sender after completion. */
     void returnCredit(int senderGpuId);
-
-    /** Delivery event wrapper. */
-    EventFunctionWrapper deliveryEvent;
 };
 
 } // namespace gem5
