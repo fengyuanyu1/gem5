@@ -23,16 +23,14 @@ XGMIBridge::XGMIBridge(const Params &p)
       numGpus(p.num_gpus),
       bandwidthBps(p.bandwidth),
       linkLatency(p.latency),
-      numLanes(p.num_lanes),
-      maxLinks(p.max_links),
       creditCount(p.credit_count),
-      vramSizePerGpu(p.vram_size_per_gpu),
-      deliveryEvent([this] { /* batch event placeholder */ }, name())
+      vramSizePerGpu(p.vram_size_per_gpu)
 {
     DPRINTF(XGMIBridge,
             "GPU %d: BW=%lu B/s, latency=%lu ticks, "
-            "credits=%d, VRAM/GPU=%lu\n",
-            gpuId, bandwidthBps, linkLatency, creditCount, vramSizePerGpu);
+            "lanes=%d, max_links=%d, credits=%d, VRAM/GPU=%lu\n",
+            gpuId, bandwidthBps, linkLatency, p.num_lanes, p.max_links,
+            creditCount, vramSizePerGpu);
 }
 
 void
