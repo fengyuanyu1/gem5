@@ -59,9 +59,10 @@ SimObject('MI300XGem5Cosim.py', sim_objects=['MI300XGem5Cosim'],
 Source('mi300x_gem5_cosim.cc', tags=['x86 isa'])
 
 # MI300X co-simulation via vfio-user protocol (standard, replaces above)
-SimObject('MI300XVfioUser.py', sim_objects=['MI300XVfioUser'],
-                               tags=['x86 isa'])
-Source('mi300x_vfio_user.cc', tags=['x86 isa'])
+if File('#ext/libvfio-user/include/libvfio-user.h').exists():
+    SimObject('MI300XVfioUser.py', sim_objects=['MI300XVfioUser'],
+                                   tags=['x86 isa'])
+    Source('mi300x_vfio_user.cc', tags=['x86 isa'])
 
 DebugFlag('AMDGPUDevice', tags=['x86 isa'])
 DebugFlag('AMDGPUMem', tags=['x86 isa'])

@@ -26,55 +26,56 @@ import threading
 import time
 import unittest
 
-
 # ======================================================================
 # Protocol wire format (must match mi300x_gem5_cosim.hh)
 # ======================================================================
 
-MSG_HDR_FORMAT = '<IIQQiI'
+MSG_HDR_FORMAT = "<IIQQiI"
 MSG_HDR_SIZE = struct.calcsize(MSG_HDR_FORMAT)
 
 # Message types
-MSG_MMIO_READ    = 0x01
-MSG_MMIO_WRITE   = 0x02
-MSG_DB_READ      = 0x03
-MSG_DB_WRITE     = 0x04
-MSG_DMA_REQ      = 0x05
-MSG_INIT         = 0x06
-MSG_SHUTDOWN     = 0x07
-MSG_CONFIG_READ  = 0x08
+MSG_MMIO_READ = 0x01
+MSG_MMIO_WRITE = 0x02
+MSG_DB_READ = 0x03
+MSG_DB_WRITE = 0x04
+MSG_DMA_REQ = 0x05
+MSG_INIT = 0x06
+MSG_SHUTDOWN = 0x07
+MSG_CONFIG_READ = 0x08
 MSG_CONFIG_WRITE = 0x09
-MSG_FRAME_READ   = 0x0A
-MSG_FRAME_WRITE  = 0x0B
+MSG_FRAME_READ = 0x0A
+MSG_FRAME_WRITE = 0x0B
 
-MSG_MMIO_RESP    = 0x81
-MSG_IRQ_RAISE    = 0x82
-MSG_IRQ_LOWER    = 0x83
-MSG_DMA_READ     = 0x84
-MSG_DMA_WRITE    = 0x85
-MSG_INIT_RESP    = 0x86
+MSG_MMIO_RESP = 0x81
+MSG_IRQ_RAISE = 0x82
+MSG_IRQ_LOWER = 0x83
+MSG_DMA_READ = 0x84
+MSG_DMA_WRITE = 0x85
+MSG_INIT_RESP = 0x86
 
 
 def pack_msg(msg_type, size=0, addr=0, data=0, access_size=0, msg_id=0):
-    return struct.pack(MSG_HDR_FORMAT,
-                       msg_type, size, addr, data, access_size, msg_id)
+    return struct.pack(
+        MSG_HDR_FORMAT, msg_type, size, addr, data, access_size, msg_id
+    )
 
 
 def unpack_msg(buf):
     fields = struct.unpack(MSG_HDR_FORMAT, buf)
     return {
-        'type': fields[0],
-        'size': fields[1],
-        'addr': fields[2],
-        'data': fields[3],
-        'access_size': fields[4],
-        'id': fields[5],
+        "type": fields[0],
+        "size": fields[1],
+        "addr": fields[2],
+        "data": fields[3],
+        "access_size": fields[4],
+        "id": fields[5],
     }
 
 
 # ======================================================================
 # Mock gem5 GPU device model
 # ======================================================================
+
 
 class MockGem5GPU:
     """Simulates the gem5 AMDGPUDevice's register/memory behavior.
@@ -111,9 +112,9 @@ class MockGem5GPU:
             # PSP firmware status (MP0_SMN_C2PMSG_33)
             0x3B10C: 0x80000000,  # FFFFFFFF_80000000 = ready
             # MMHUB FB location
-            0x60920: self.MMHUB_BASE,   # MC_VM_FB_LOCATION_BASE
-            0x60924: self.MMHUB_TOP,    # MC_VM_FB_LOCATION_TOP
-            0x60928: self.VRAM_SIZE_MB, # MC_VM_FB_SIZE_MB
+            0x60920: self.MMHUB_BASE,  # MC_VM_FB_LOCATION_BASE
+            0x60924: self.MMHUB_TOP,  # MC_VM_FB_LOCATION_TOP
+            0x60928: self.VRAM_SIZE_MB,  # MC_VM_FB_SIZE_MB
             # GRBM status (idle)
             0xD000: 0x00000000,
             0xD004: 0x00000000,
@@ -176,13 +177,13 @@ class MockGem5GPU:
 
     def frame_read(self, offset, size=4):
         if offset + size <= len(self.vram):
-            val = int.from_bytes(self.vram[offset:offset+size], 'little')
+            val = int.from_bytes(self.vram[offset : offset + size], "little")
             return val
         return 0
 
     def frame_write(self, offset, value, size=4):
         if offset + size <= len(self.vram):
-            self.vram[offset:offset+size] = value.to_bytes(size, 'little')
+            self.vram[offset : offset + size] = value.to_bytes(size, "little")
 
 
 class MockGem5Server:
@@ -250,67 +251,90 @@ class MockGem5Server:
             pass
 
     def _handle(self, conn, msg):
-        t = msg['type']
+        t = msg["type"]
         if t == MSG_INIT:
-            resp = pack_msg(msg_type=MSG_INIT_RESP, msg_id=msg['id'],
-                           data=self.gpu.VRAM_SIZE_BYTES)
+            resp = pack_msg(
+                msg_type=MSG_INIT_RESP,
+                msg_id=msg["id"],
+                data=self.gpu.VRAM_SIZE_BYTES,
+            )
             conn.sendall(resp)
 
         elif t == MSG_MMIO_READ:
-            val = self.gpu.mmio_read(msg['addr'], msg['access_size'] or 4)
-            resp = pack_msg(msg_type=MSG_MMIO_RESP, msg_id=msg['id'],
-                           addr=msg['addr'], data=val,
-                           access_size=msg['access_size'] or 4)
+            val = self.gpu.mmio_read(msg["addr"], msg["access_size"] or 4)
+            resp = pack_msg(
+                msg_type=MSG_MMIO_RESP,
+                msg_id=msg["id"],
+                addr=msg["addr"],
+                data=val,
+                access_size=msg["access_size"] or 4,
+            )
             conn.sendall(resp)
 
         elif t == MSG_MMIO_WRITE:
-            self.gpu.mmio_write(msg['addr'], msg['data'],
-                               msg['access_size'] or 4)
+            self.gpu.mmio_write(
+                msg["addr"], msg["data"], msg["access_size"] or 4
+            )
 
         elif t == MSG_CONFIG_READ:
-            val = self.gpu.config_read(msg['addr'], msg['access_size'] or 4)
-            resp = pack_msg(msg_type=MSG_MMIO_RESP, msg_id=msg['id'],
-                           addr=msg['addr'], data=val,
-                           access_size=msg['access_size'] or 4)
+            val = self.gpu.config_read(msg["addr"], msg["access_size"] or 4)
+            resp = pack_msg(
+                msg_type=MSG_MMIO_RESP,
+                msg_id=msg["id"],
+                addr=msg["addr"],
+                data=val,
+                access_size=msg["access_size"] or 4,
+            )
             conn.sendall(resp)
 
         elif t == MSG_CONFIG_WRITE:
-            self.gpu.config_write(msg['addr'], msg['data'],
-                                 msg['access_size'] or 4)
+            self.gpu.config_write(
+                msg["addr"], msg["data"], msg["access_size"] or 4
+            )
 
         elif t == MSG_FRAME_READ:
-            val = self.gpu.frame_read(msg['addr'], msg['access_size'] or 4)
-            resp = pack_msg(msg_type=MSG_MMIO_RESP, msg_id=msg['id'],
-                           addr=msg['addr'], data=val,
-                           access_size=msg['access_size'] or 4)
+            val = self.gpu.frame_read(msg["addr"], msg["access_size"] or 4)
+            resp = pack_msg(
+                msg_type=MSG_MMIO_RESP,
+                msg_id=msg["id"],
+                addr=msg["addr"],
+                data=val,
+                access_size=msg["access_size"] or 4,
+            )
             conn.sendall(resp)
 
         elif t == MSG_FRAME_WRITE:
-            self.gpu.frame_write(msg['addr'], msg['data'],
-                                msg['access_size'] or 4)
+            self.gpu.frame_write(
+                msg["addr"], msg["data"], msg["access_size"] or 4
+            )
 
         elif t == MSG_DB_WRITE:
-            self.gpu.doorbells[msg['addr']] = msg['data']
+            self.gpu.doorbells[msg["addr"]] = msg["data"]
 
         elif t == MSG_DMA_REQ:
-            if msg['size'] > 0:
+            if msg["size"] > 0:
                 # DMA write: receive payload
-                payload = conn.recv(msg['size'])
-                off = msg['addr']
+                payload = conn.recv(msg["size"])
+                off = msg["addr"]
                 end = min(off + len(payload), len(self.gpu.vram))
                 if off < end:
-                    self.gpu.vram[off:end] = payload[:end - off]
+                    self.gpu.vram[off:end] = payload[: end - off]
             else:
                 # DMA read: send VRAM data
-                length = min(msg['data'], len(self.gpu.vram) - msg['addr'])
+                length = min(msg["data"], len(self.gpu.vram) - msg["addr"])
                 if length > 0:
-                    chunk = bytes(self.gpu.vram[msg['addr']:
-                                                msg['addr'] + length])
+                    chunk = bytes(
+                        self.gpu.vram[msg["addr"] : msg["addr"] + length]
+                    )
                 else:
-                    chunk = b'\x00' * msg['data']
-                resp = pack_msg(msg_type=MSG_MMIO_RESP, msg_id=msg['id'],
-                               addr=msg['addr'], data=len(chunk),
-                               size=len(chunk))
+                    chunk = b"\x00" * msg["data"]
+                resp = pack_msg(
+                    msg_type=MSG_MMIO_RESP,
+                    msg_id=msg["id"],
+                    addr=msg["addr"],
+                    data=len(chunk),
+                    size=len(chunk),
+                )
                 conn.sendall(resp)
                 conn.sendall(chunk)
 
@@ -355,7 +379,8 @@ class QEMUClient:
         if self.mmio_sock:
             try:
                 self.mmio_sock.sendall(
-                    pack_msg(msg_type=MSG_SHUTDOWN, msg_id=self._next_id()))
+                    pack_msg(msg_type=MSG_SHUTDOWN, msg_id=self._next_id())
+                )
             except Exception:
                 pass
             self.mmio_sock.close()
@@ -365,65 +390,105 @@ class QEMUClient:
     def init_handshake(self, vram_size=16 * 1024**3):
         """Perform INIT handshake, returns (success, gem5_vram_size)."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_INIT, msg_id=mid, data=vram_size))
+        self.mmio_sock.sendall(
+            pack_msg(msg_type=MSG_INIT, msg_id=mid, data=vram_size)
+        )
         resp = unpack_msg(self.mmio_sock.recv(MSG_HDR_SIZE))
-        return resp['type'] == MSG_INIT_RESP, resp['data']
+        return resp["type"] == MSG_INIT_RESP, resp["data"]
 
     def pci_config_read(self, offset, size=4):
         """Read PCI config space, returns integer value."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_CONFIG_READ, msg_id=mid,
-            addr=offset, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_CONFIG_READ,
+                msg_id=mid,
+                addr=offset,
+                access_size=size,
+            )
+        )
         resp = unpack_msg(self.mmio_sock.recv(MSG_HDR_SIZE))
-        return resp['data']
+        return resp["data"]
 
     def pci_config_write(self, offset, value, size=4):
         """Write PCI config space (fire-and-forget)."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_CONFIG_WRITE, msg_id=mid,
-            addr=offset, data=value, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_CONFIG_WRITE,
+                msg_id=mid,
+                addr=offset,
+                data=value,
+                access_size=size,
+            )
+        )
 
     def mmio_read(self, offset, size=4):
         """Read MMIO register, returns integer value."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_MMIO_READ, msg_id=mid,
-            addr=offset, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_MMIO_READ,
+                msg_id=mid,
+                addr=offset,
+                access_size=size,
+            )
+        )
         resp = unpack_msg(self.mmio_sock.recv(MSG_HDR_SIZE))
-        return resp['data']
+        return resp["data"]
 
     def mmio_write(self, offset, value, size=4):
         """Write MMIO register (fire-and-forget)."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_MMIO_WRITE, msg_id=mid,
-            addr=offset, data=value, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_MMIO_WRITE,
+                msg_id=mid,
+                addr=offset,
+                data=value,
+                access_size=size,
+            )
+        )
 
     def doorbell_write(self, offset, value, size=4):
         """Write doorbell (fire-and-forget)."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_DB_WRITE, msg_id=mid,
-            addr=offset, data=value, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_DB_WRITE,
+                msg_id=mid,
+                addr=offset,
+                data=value,
+                access_size=size,
+            )
+        )
 
     def frame_read(self, offset, size=4):
         """Read framebuffer/VRAM, returns integer value."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_FRAME_READ, msg_id=mid,
-            addr=offset, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_FRAME_READ,
+                msg_id=mid,
+                addr=offset,
+                access_size=size,
+            )
+        )
         resp = unpack_msg(self.mmio_sock.recv(MSG_HDR_SIZE))
-        return resp['data']
+        return resp["data"]
 
     def frame_write(self, offset, value, size=4):
         """Write framebuffer/VRAM (fire-and-forget)."""
         mid = self._next_id()
-        self.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_FRAME_WRITE, msg_id=mid,
-            addr=offset, data=value, access_size=size))
+        self.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_FRAME_WRITE,
+                msg_id=mid,
+                addr=offset,
+                data=value,
+                access_size=size,
+            )
+        )
 
     def recv_irq(self, timeout=2.0):
         """Wait for IRQ on event connection, returns vector or None."""
@@ -432,8 +497,8 @@ class QEMUClient:
             data = self.event_sock.recv(MSG_HDR_SIZE)
             if len(data) == MSG_HDR_SIZE:
                 msg = unpack_msg(data)
-                if msg['type'] == MSG_IRQ_RAISE:
-                    return msg['data']
+                if msg["type"] == MSG_IRQ_RAISE:
+                    return msg["data"]
         except socket.timeout:
             pass
         return None
@@ -465,7 +530,7 @@ class QEMUClient:
     def ssh_cat_fw_version(self):
         """Simulate: cat /sys/kernel/debug/dri/0/amdgpu_firmware_info"""
         psp_status = self.mmio_read(0x3B10C)
-        return "PSP: 0x{:08x}".format(psp_status)
+        return f"PSP: 0x{psp_status:08x}"
 
     def ssh_cat_gpu_busy(self):
         """Simulate: cat /sys/class/drm/card0/device/gpu_busy_percent"""
@@ -480,6 +545,7 @@ class QEMUClient:
 # Functional Tests (QEMU-style: SSH command output string comparison)
 # ======================================================================
 
+
 class TestFunctionalDriverProbe(unittest.TestCase):
     """Functional test: simulate amdgpu driver probe and verify outputs.
 
@@ -491,8 +557,7 @@ class TestFunctionalDriverProbe(unittest.TestCase):
     """
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_func_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_func_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -573,8 +638,7 @@ class TestFunctionalVRAMAccess(unittest.TestCase):
     """Functional test: VRAM read/write through framebuffer BAR."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_vram_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_vram_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -614,8 +678,11 @@ class TestFunctionalVRAMAccess(unittest.TestCase):
 
         for off, expected in offsets_values:
             val = self.client.frame_read(off)
-            self.assertEqual(val, expected,
-                           f"VRAM[0x{off:x}] = 0x{val:x}, expected 0x{expected:x}")
+            self.assertEqual(
+                val,
+                expected,
+                f"VRAM[0x{off:x}] = 0x{val:x}, expected 0x{expected:x}",
+            )
 
     def test_vram_zero_on_init(self):
         """Fresh VRAM should read as zeros.
@@ -630,8 +697,7 @@ class TestFunctionalMMIORegisterAccess(unittest.TestCase):
     """Functional test: MMIO register read/write patterns."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_mmio_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_mmio_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -695,8 +761,7 @@ class TestFunctionalInterrupt(unittest.TestCase):
     """Functional test: interrupt delivery from gem5 to QEMU."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_irq_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_irq_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -745,8 +810,7 @@ class TestFunctionalDMATransfer(unittest.TestCase):
     """Functional test: DMA transfers between host and GPU VRAM."""
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_dma_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_dma_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -770,9 +834,15 @@ class TestFunctionalDMATransfer(unittest.TestCase):
         """
         payload = bytes(range(64))
         mid = self.client._next_id()
-        self.client.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_DMA_REQ, msg_id=mid,
-            addr=0x0, data=len(payload), size=len(payload)))
+        self.client.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_DMA_REQ,
+                msg_id=mid,
+                addr=0x0,
+                data=len(payload),
+                size=len(payload),
+            )
+        )
         self.client.mmio_sock.sendall(payload)
 
         time.sleep(0.1)
@@ -780,9 +850,10 @@ class TestFunctionalDMATransfer(unittest.TestCase):
         # Verify data landed in VRAM
         for i in range(0, 64, 4):
             val = self.client.frame_read(i)
-            expected = int.from_bytes(payload[i:i+4], 'little')
-            self.assertEqual(val, expected,
-                           f"VRAM[0x{i:x}] mismatch after DMA write")
+            expected = int.from_bytes(payload[i : i + 4], "little")
+            self.assertEqual(
+                val, expected, f"VRAM[0x{i:x}] mismatch after DMA write"
+            )
 
     def test_dma_read_from_vram(self):
         """DMA read: transfer data from GPU VRAM to host.
@@ -795,21 +866,23 @@ class TestFunctionalDMATransfer(unittest.TestCase):
 
         # DMA read request
         mid = self.client._next_id()
-        self.client.mmio_sock.sendall(pack_msg(
-            msg_type=MSG_DMA_REQ, msg_id=mid,
-            addr=0x0, data=8, size=0))  # size=0 means read
+        self.client.mmio_sock.sendall(
+            pack_msg(
+                msg_type=MSG_DMA_REQ, msg_id=mid, addr=0x0, data=8, size=0
+            )
+        )  # size=0 means read
 
         # Receive response header + payload
         resp_data = self.client.mmio_sock.recv(MSG_HDR_SIZE)
         resp = unpack_msg(resp_data)
-        self.assertEqual(resp['type'], MSG_MMIO_RESP)
+        self.assertEqual(resp["type"], MSG_MMIO_RESP)
 
-        payload_len = resp['size']
+        payload_len = resp["size"]
         self.assertEqual(payload_len, 8)
 
         payload = self.client.mmio_sock.recv(payload_len)
-        val0 = int.from_bytes(payload[0:4], 'little')
-        val1 = int.from_bytes(payload[4:8], 'little')
+        val0 = int.from_bytes(payload[0:4], "little")
+        val1 = int.from_bytes(payload[4:8], "little")
         self.assertEqual(val0, 0xAABBCCDD)
         self.assertEqual(val1, 0x11223344)
 
@@ -832,8 +905,7 @@ class TestFunctionalFullDriverInit(unittest.TestCase):
     """
 
     def setUp(self):
-        self.sock_path = tempfile.mktemp(suffix='.sock',
-                                          prefix='cosim_full_')
+        self.sock_path = tempfile.mktemp(suffix=".sock", prefix="cosim_full_")
         self.gpu = MockGem5GPU()
         self.server = MockGem5Server(self.sock_path, self.gpu)
         self.server.start()
@@ -891,7 +963,9 @@ class TestFunctionalFullDriverInit(unittest.TestCase):
         cmd_reg = self.client.pci_config_read(0x04)
         bus_master = bool(cmd_reg & 0x04)
         self.assertTrue(bus_master, "BusMaster not enabled")
-        results.append(("PCI BusMaster", "enabled" if bus_master else "disabled"))
+        results.append(
+            ("PCI BusMaster", "enabled" if bus_master else "disabled")
+        )
 
         # Step 4: GPU version
         output = self._ssh_run("cat /sys/class/drm/card0/device/gpu_version")
@@ -900,19 +974,22 @@ class TestFunctionalFullDriverInit(unittest.TestCase):
 
         # Step 5: VRAM size
         output = self._ssh_run(
-            "cat /sys/class/drm/card0/device/mem_info_vram_total")
+            "cat /sys/class/drm/card0/device/mem_info_vram_total"
+        )
         self.assertEqual(output, "17179869184")
         results.append(("vram_total", output))
 
         # Step 6: PSP firmware
         output = self._ssh_run(
-            "cat /sys/kernel/debug/dri/0/amdgpu_firmware_info")
+            "cat /sys/kernel/debug/dri/0/amdgpu_firmware_info"
+        )
         self.assertEqual(output, "PSP: 0x80000000")
         results.append(("PSP", output))
 
         # Step 7: GPU busy
         output = self._ssh_run(
-            "cat /sys/class/drm/card0/device/gpu_busy_percent")
+            "cat /sys/class/drm/card0/device/gpu_busy_percent"
+        )
         self.assertEqual(output, "0")
         results.append(("gpu_busy", output))
 
@@ -926,7 +1003,7 @@ class TestFunctionalFullDriverInit(unittest.TestCase):
             print(f"    {name:20s}: {value}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("=" * 70)
     print("MI300X gem5-QEMU Co-simulation Functional Tests")
     print("(QEMU-style: SSH command output string comparison)")

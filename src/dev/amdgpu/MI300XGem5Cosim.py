@@ -59,6 +59,4 @@ class MI300XGem5Cosim(SimObject):
         "POSIX shared memory name for VRAM (e.g. /mi300x-vram)",
     )
 
-    vram_size = Param.MemorySize(
-        "16GiB", "Size of VRAM shared memory region"
-    )
+    vram_size = Param.MemorySize("16GiB", "Size of VRAM shared memory region")
