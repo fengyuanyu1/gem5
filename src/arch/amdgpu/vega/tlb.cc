@@ -245,6 +245,10 @@ void
 GpuTLB::invalidateAll()
 {
     DPRINTF(GPUTLB, "Invalidating all entries.\n");
+    if (walker) {
+        walker->invalidatePWC();
+        DPRINTF(GPUTLB, "Invalidated page walk cache.\n");
+    }
 
     for (int i = 0; i < numSets; ++i) {
         while (!entryList[i].empty()) {
