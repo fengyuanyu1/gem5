@@ -379,7 +379,7 @@ GPUCommandProcessor::dispatchKernelObject(AMDKernelCode *akc, void *raw_pkt,
             const Addr chunk_size =
                 std::min(remaining, page_size - page_offset);
 
-            task->addKernargPhysRange(pa, chunk_size);
+            task->addKernargPhysRange(pa, chunk_size, system);
             va += chunk_size;
             remaining -= chunk_size;
         }

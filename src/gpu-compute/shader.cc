@@ -213,9 +213,14 @@ Shader::prepareInvalidate(HSAQueueEntry *task) {
     // counter value is 0 now, indicating the inv is about to start
     _dispatcher.updateInvCounter(kernId, +1);
 
-    // Iterate all physical kernarg ranges recorded for the dispatch, and
-    // invalidate each covered GL2 cache line before any workgroup starts.
+    // Iterate all translated kernarg ranges recorded for the dispatch.
+    // System-memory kernarg ranges are later accessed through systemReq and
+    // do not belong to the GPU GL2 address space.
     for (const auto &range : task->kernargPhysAddrs()) {
+        if (range.system) {
+            continue;
+        }
+
         ComputeUnit *cu = cuList[0];
         const Addr line_size = cu->cacheLineSize();
         const Addr line_base = roundDown(range.addr, line_size);
