@@ -47,9 +47,9 @@
 #include "gpu-compute/gpu_command_processor.hh"
 #include "mem/packet_access.hh"
 #include "mem/page_table.hh"
+#include "sim/eventq.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
-#include "sim/proxy_ptr.hh"
 #include "sim/system.hh"
 
 #define HSAPP_EVENT_DESCRIPTION_GENERATOR(XEVENT) \
@@ -409,9 +409,6 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
             assert(dep_sgnl_rd_st->pendingReads == 0);
             DPRINTF(HSAPacketProcessor, "%s: Barrier packet completed" \
                     " active list ID = %d\n", __FUNCTION__, rl_idx);
-            // TODO: Completion signal of barrier packet to be
-            // atomically decremented here
-            finishPkt((void*)bar_and_pkt, rl_idx);
             is_submitted = UNBLOCKED;
             // Reset signal values
             dep_sgnl_rd_st->resetSigVals();
@@ -425,8 +422,14 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
                        " completion signal! Addr: %x\n",
                        bar_and_pkt->completion_signal);
 
+                regdQList[rl_idx]->setBarrierBit(true);
+                auto done = new EventFunctionWrapper(
+                    [=] { finishPkt((void *)bar_and_pkt, rl_idx); },
+                    name(), true);
                 gpu_device->sendCompletionSignal(
-                    bar_and_pkt->completion_signal, vmid);
+                    bar_and_pkt->completion_signal, vmid, done);
+            } else {
+                finishPkt((void *)bar_and_pkt, rl_idx);
             }
         }
         if (dep_sgnl_rd_st->pendingReads > 0) {
@@ -441,11 +444,23 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
     } else if (pkt_type == HSA_PACKET_TYPE_AGENT_DISPATCH) {
         DPRINTF(HSAPacketProcessor, "%s: submitting agent dispatch pkt" \
                 " active list ID = %d\n", __FUNCTION__, rl_idx);
-        // Submit packet to HSA device (dispatcher)
-        gpu_device->submitAgentDispatchPkt(
-                (void *)disp_pkt, rl_idx, host_pkt_addr);
         is_submitted = UNBLOCKED;
-        sendAgentDispatchCompletionSignal((void *)disp_pkt, 0, vmid);
+        auto agent_pkt = (_hsa_agent_dispatch_packet_t *)disp_pkt;
+        auto finish_done = new EventFunctionWrapper(
+            [=] { finishPkt((void *)disp_pkt, rl_idx); },
+            name(), true);
+        auto completion_done = new EventFunctionWrapper(
+            [=] {
+                if (agent_pkt->completion_signal) {
+                    gpu_device->sendCompletionSignal(
+                        agent_pkt->completion_signal, vmid, finish_done);
+                } else {
+                    schedule(finish_done, curTick());
+                }
+            },
+            name(), true);
+        gpu_device->submitAgentDispatchPkt((void *)disp_pkt, rl_idx,
+                                           host_pkt_addr, completion_done);
     } else {
         fatal("Unsupported packet type %d\n", pkt_type);
     }
@@ -737,62 +752,6 @@ HSAPacketProcessor::finishPkt(void *pvPkt, uint32_t rl_idx)
                                         // when implementing
                                         // multi-process support
     }
-}
-
-void
-HSAPacketProcessor::sendAgentDispatchCompletionSignal(
-    void *pkt, hsa_signal_value_t signal, uint16_t vmid)
-{
-    auto agent_pkt = (_hsa_agent_dispatch_packet_t *)pkt;
-    uint64_t signal_addr =
-            (uint64_t) (((uint64_t *)agent_pkt->completion_signal) + 1);
-    DPRINTF(HSAPacketProcessor, "Triggering Agent Dispatch packet" \
-            " completion signal: %x!\n", signal_addr);
-    /**
-     * HACK: The semantics of the HSA signal is to
-     * decrement the current signal value.
-     * I'm going to cheat here and read out
-     * the value from main memory using functional
-     * access, and then just DMA the decremented value.
-     * The reason for this is that the DMASequencer does
-     * not support atomic operations.
-     */
-    VPtr<uint64_t> prev_signal(signal_addr, sys->threads[0]);
-
-    DPRINTF(HSAPacketProcessor,"HSADriver: Sending signal to %lu\n",
-            (uint64_t)sys->threads[0]->cpuId());
-
-
-    hsa_signal_value_t *new_signal = new hsa_signal_value_t;
-    *new_signal = (hsa_signal_value_t) *prev_signal - 1;
-
-    dmaWriteVirtForVMID(signal_addr, sizeof(hsa_signal_value_t), nullptr,
-                        new_signal, vmid);
-}
-
-void
-HSAPacketProcessor::sendCompletionSignal(hsa_signal_value_t signal,
-                                         uint16_t vmid)
-{
-    uint64_t signal_addr = (uint64_t) (((uint64_t *)signal) + 1);
-    DPRINTF(HSAPacketProcessor, "Triggering completion signal: %x!\n",
-            signal_addr);
-    /**
-     * HACK: The semantics of the HSA signal is to
-     * decrement the current signal value.
-     * I'm going to cheat here and read out
-     * the value from main memory using functional
-     * access, and then just DMA the decremented value.
-     * The reason for this is that the DMASequencer does
-     * not support atomic operations.
-     */
-    VPtr<uint64_t> prev_signal(signal_addr, sys->threads[0]);
-
-    hsa_signal_value_t *new_signal = new hsa_signal_value_t;
-    *new_signal = (hsa_signal_value_t) *prev_signal - 1;
-
-    dmaWriteVirtForVMID(signal_addr, sizeof(hsa_signal_value_t), nullptr,
-                        new_signal, vmid);
 }
 
 } // namespace gem5

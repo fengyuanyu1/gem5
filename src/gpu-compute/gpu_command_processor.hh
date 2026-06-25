@@ -64,6 +64,7 @@ namespace gem5
 {
 
 struct GPUCommandProcessorParams;
+class Event;
 class GPUComputeDriver;
 class GPUDispatcher;
 class Shader;
@@ -110,7 +111,7 @@ class GPUCommandProcessor : public DmaVirtDevice
     void completeTimingRead(int dispType);
 
     void submitAgentDispatchPkt(void *raw_pkt, uint32_t queue_id,
-                           Addr host_pkt_addr);
+                                Addr host_pkt_addr, Event *done_event);
     void submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
                            Addr host_pkt_addr);
     void submitVendorPkt(void *raw_pkt, uint32_t queue_id,
@@ -128,22 +129,25 @@ class GPUCommandProcessor : public DmaVirtDevice
     AddrRangeList getAddrRanges() const override;
     System *system();
 
-    void sendCompletionSignal(Addr signal_handle, uint16_t vmid);
+    void sendCompletionSignal(Addr signal_handle, uint16_t vmid,
+                              Event *done_event = nullptr);
     void updateHsaSignal(Addr signal_handle, uint64_t signal_value,
-                         uint16_t vmid = 1,
-                         HsaSignalCallbackFunction function =
-                            [] (const uint64_t &) { });
-    void updateHsaSignalAsync(Addr signal_handle, int64_t diff, uint16_t vmid);
+                         uint16_t vmid, HsaSignalCallbackFunction function);
+    void updateHsaSignalAsync(Addr signal_handle, int64_t diff, uint16_t vmid,
+                              Event *done_event);
     void updateHsaSignalData(Addr value_addr, int64_t diff,
-                             uint64_t *prev_value, uint16_t vmid);
-    void updateHsaSignalDone(uint64_t *signal_value);
+                             uint64_t *prev_value, bool has_event_value,
+                             uint64_t event_value, uint16_t vmid,
+                             Event *done_event);
+    void updateHsaSignalDone(uint64_t *signal_value, Event *done_event);
     void updateHsaMailboxData(Addr signal_handle, uint64_t *mailbox_value,
-                              uint16_t vmid);
-    void updateHsaEventData(Addr signal_handle, uint64_t *event_value,
-                            uint16_t vmid);
+                              int64_t diff, uint16_t vmid, Event *done_event);
+    void updateHsaEventData(Addr signal_handle, Addr signal_slot_addr,
+                            uint64_t *event_value, int64_t diff,
+                            uint16_t vmid, Event *done_event);
     void updateHsaEventTs(Addr signal_handle, amd_event_t *event_value,
-                          uint16_t vmid);
-
+                          bool has_event_value, uint64_t event_id,
+                          int64_t diff, uint16_t vmid, Event *done_event);
     uint64_t functionalReadHsaSignal(Addr signal_handle);
 
     Addr getHsaSignalValueAddr(Addr signal_handle)
@@ -169,7 +173,7 @@ class GPUCommandProcessor : public DmaVirtDevice
     VegaISA::Walker *walker;
 
     // Typedefing dmaRead and dmaWrite function pointer
-    typedef void (DmaDevice::*DmaFnPtr)(Addr, int, Event*, uint8_t*, Tick);
+    typedef void (DmaDevice::*DmaFnPtr)(Addr, int, Event *, uint8_t *, Tick);
     void initABI(HSAQueueEntry *task);
     void sanityCheckAKC(AMDKernelCode *akc);
     HSAPacketProcessor *hsaPP;

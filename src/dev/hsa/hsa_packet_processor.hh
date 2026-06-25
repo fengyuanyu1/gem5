@@ -371,11 +371,6 @@ class HSAPacketProcessor: public DmaVirtDevice
     void schedAQLProcessing(uint32_t rl_idx);
     void schedAQLProcessing(uint32_t rl_idx, Tick delay);
 
-    void sendAgentDispatchCompletionSignal(void *pkt,
-                                           hsa_signal_value_t signal,
-                                           uint16_t vmid);
-    void sendCompletionSignal(hsa_signal_value_t signal, uint16_t vmid = 1);
-
     /**
      * Calls getCurrentEntry once the queueEntry has been dmaRead.
      */
