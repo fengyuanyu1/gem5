@@ -67,6 +67,7 @@ class PM4PacketProcessor : public DmaVirtDevice
     int _ipId;
     AddrRange _mmioRange;
 
+    void deallocateQueue(Addr doorbell);
     void unmapAllQueues(bool unmap_static);
 
   public:
@@ -122,7 +123,7 @@ class PM4PacketProcessor : public DmaVirtDevice
      * offset.
      */
     void newQueue(QueueDesc *q, Addr offset, PM4MapQueues *pkt = nullptr,
-                  int id = -1);
+                  int id = -1, uint16_t vmid = 0);
 
     /**
      * This method start processing a PM4Queue from the current read pointer
