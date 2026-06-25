@@ -69,7 +69,7 @@ class HSAQueueEntry
 
     HSAQueueEntry(std::string kernel_name, uint32_t queue_id, int dispatch_id,
                   void *disp_pkt, AMDKernelCode *akc, Addr host_pkt_addr,
-                  Addr code_addr, GfxVersion gfx_version)
+                  Addr code_addr, GfxVersion gfx_version, uint16_t vmid)
         : _gfxVersion(gfx_version),
           kernName(kernel_name),
           _wgSize{
@@ -80,6 +80,7 @@ class HSAQueueEntry
                      (int)((_hsa_dispatch_packet_t *)disp_pkt)->grid_size_y,
                      (int)((_hsa_dispatch_packet_t *)disp_pkt)->grid_size_z}},
           _queueId(queue_id),
+          _vmid(vmid),
           _dispatchId(dispatch_id),
           dispPkt(disp_pkt),
           _hostDispPktAddr(host_pkt_addr),
@@ -193,6 +194,12 @@ class HSAQueueEntry
     queueId() const
     {
         return _queueId;
+    }
+
+    uint16_t
+    vmid() const
+    {
+        return _vmid;
     }
 
     int
@@ -524,6 +531,7 @@ class HSAQueueEntry
     int numSgprs;
     // id of AQL queue in which this entry is placed
     uint32_t _queueId;
+    uint16_t _vmid;
     int _dispatchId;
     // raw AQL packet pointer
     void *dispPkt;

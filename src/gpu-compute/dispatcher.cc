@@ -321,7 +321,8 @@ GPUDispatcher::notifyWgCompl(Wavefront *wf)
                         "signal! Addr: %d\n",
                         task->completionSignal());
 
-                gpuCmdProc->sendCompletionSignal(task->completionSignal());
+                gpuCmdProc->sendCompletionSignal(task->completionSignal(),
+                                                 task->vmid());
             } else {
                 DPRINTF(GPUDisp, "HSA AQL Kernel Complete! No completion "
                                  "signal\n");
