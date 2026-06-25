@@ -904,10 +904,15 @@ AMDGPUDevice::serialize(CheckpointOut &cp) const
 
     uint64_t doorbells_size = doorbells.size();
     uint64_t sdma_engs_size = sdmaEngs.size();
+    uint64_t id_map_size = idMap.size();
     uint64_t used_vmid_map_size = usedVMIDs.size();
 
     SERIALIZE_SCALAR(doorbells_size);
     SERIALIZE_SCALAR(sdma_engs_size);
+    SERIALIZE_SCALAR(id_map_size);
+    // Preserve the legacy MAP_QUEUES fallback across checkpoints. This is not
+    // sufficient to identify a queue's owning VMID in multi-PASID workloads.
+    SERIALIZE_SCALAR(_lastVMID);
     // Save the number of vmids used
     SERIALIZE_SCALAR(used_vmid_map_size);
 
@@ -917,6 +922,8 @@ AMDGPUDevice::serialize(CheckpointOut &cp) const
     auto doorbells_ip_ids = std::make_unique<int[]>(doorbells_size);
     auto sdma_engs_offset = std::make_unique<uint32_t[]>(sdma_engs_size);
     auto sdma_engs = std::make_unique<int[]>(sdma_engs_size);
+    auto id_map_pasids = std::make_unique<uint16_t[]>(id_map_size);
+    auto id_map_vmids = std::make_unique<uint16_t[]>(id_map_size);
     auto used_vmids = std::make_unique<int[]>(used_vmid_map_size);
     auto used_queue_id_sizes = std::make_unique<int[]>(used_vmid_map_size);
     std::vector<int> used_vmid_sets;
@@ -933,6 +940,13 @@ AMDGPUDevice::serialize(CheckpointOut &cp) const
     for (auto & it : sdmaEngs) {
         sdma_engs_offset[idx] = it.first;
         sdma_engs[idx] = it.second->getId();
+        ++idx;
+    }
+
+    idx = 0;
+    for (auto &it : idMap) {
+        id_map_pasids[idx] = it.first;
+        id_map_vmids[idx] = it.second;
         ++idx;
     }
 
@@ -955,6 +969,8 @@ AMDGPUDevice::serialize(CheckpointOut &cp) const
     SERIALIZE_UNIQUE_PTR_ARRAY(doorbells_ip_ids, doorbells_size);
     SERIALIZE_UNIQUE_PTR_ARRAY(sdma_engs_offset, sdma_engs_size);
     SERIALIZE_UNIQUE_PTR_ARRAY(sdma_engs, sdma_engs_size);
+    SERIALIZE_UNIQUE_PTR_ARRAY(id_map_pasids, id_map_size);
+    SERIALIZE_UNIQUE_PTR_ARRAY(id_map_vmids, id_map_size);
     // Save the vmids used in an array
     SERIALIZE_UNIQUE_PTR_ARRAY(used_vmids, used_vmid_map_size);
     // Save the size of the set of queue ids mapped to each vmid
@@ -977,10 +993,14 @@ AMDGPUDevice::unserialize(CheckpointIn &cp)
 
     uint64_t doorbells_size = 0;
     uint64_t sdma_engs_size = 0;
+    uint64_t id_map_size = 0;
     uint64_t used_vmid_map_size = 0;
 
     UNSERIALIZE_SCALAR(doorbells_size);
     UNSERIALIZE_SCALAR(sdma_engs_size);
+    UNSERIALIZE_SCALAR(id_map_size);
+    // Restores the legacy MAP_QUEUES fallback value serialized above.
+    UNSERIALIZE_SCALAR(_lastVMID);
     UNSERIALIZE_SCALAR(used_vmid_map_size);
 
 
@@ -1011,6 +1031,18 @@ AMDGPUDevice::unserialize(CheckpointIn &cp)
             assert(sdmaIds.count(sdma_id));
             SDMAEngine *sdma = sdmaIds[sdma_id];
             sdmaEngs.insert(std::make_pair(sdma_engs_offset[idx], sdma));
+        }
+    }
+
+    if (id_map_size > 0) {
+        auto id_map_pasids = std::make_unique<uint16_t[]>(id_map_size);
+        auto id_map_vmids = std::make_unique<uint16_t[]>(id_map_size);
+
+        UNSERIALIZE_UNIQUE_PTR_ARRAY(id_map_pasids, id_map_size);
+        UNSERIALIZE_UNIQUE_PTR_ARRAY(id_map_vmids, id_map_size);
+
+        for (int idx = 0; idx < id_map_size; ++idx) {
+            idMap[id_map_pasids[idx]] = id_map_vmids[idx];
         }
     }
 
@@ -1046,6 +1078,18 @@ AMDGPUDevice::unserialize(CheckpointIn &cp)
 }
 
 uint16_t
+AMDGPUDevice::pasidFromVMID(uint16_t vmid)
+{
+    for (const auto &entry : idMap) {
+        if (entry.second == vmid) {
+            return entry.first;
+        }
+    }
+
+    panic("pasidFromVMID: no PASID found for VMID %d\n", vmid);
+}
+
+uint16_t
 AMDGPUDevice::allocateVMID(uint16_t pasid)
 {
     for (uint16_t vmid = 1; vmid < AMDGPU_VM_COUNT; vmid++) {
@@ -1053,6 +1097,9 @@ AMDGPUDevice::allocateVMID(uint16_t pasid)
         if (result == usedVMIDs.end()) {
             idMap.insert(std::make_pair(pasid, vmid));
             usedVMIDs[vmid] = {};
+            // Track the most recent allocation for legacy MAP_QUEUES packets
+            // whose VMID field is zero. Queue-specific VMID plumbing should
+            // not rely on this global value when PASIDs can interleave.
             _lastVMID = vmid;
             return vmid;
         }
@@ -1063,6 +1110,14 @@ AMDGPUDevice::allocateVMID(uint16_t pasid)
 void
 AMDGPUDevice::deallocateVmid(uint16_t vmid)
 {
+    for (auto it = idMap.begin(); it != idMap.end();) {
+        if (it->second == vmid) {
+            it = idMap.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     usedVMIDs.erase(vmid);
 }
 
@@ -1113,6 +1168,20 @@ void
 AMDGPUDevice::insertQId(uint16_t vmid, int id)
 {
     usedVMIDs[vmid].insert(id);
+}
+
+void
+AMDGPUDevice::removeQId(uint16_t vmid, int id)
+{
+    auto result = usedVMIDs.find(vmid);
+    if (result == usedVMIDs.end()) {
+        return;
+    }
+
+    result->second.erase(id);
+    if (result->second.empty()) {
+        deallocateVmid(vmid);
+    }
 }
 
 } // namespace gem5
