@@ -84,17 +84,18 @@ class HSAQueueDescriptor
         uint64_t     readIndex;
         uint32_t     numElts;
         uint64_t     hostReadIndexPtr;
+        uint16_t     vmid;
         bool         stalledOnDmaBufAvailability;
         bool         dmaInProgress;
         GfxVersion   gfxVersion;
 
         HSAQueueDescriptor(uint64_t base_ptr, uint64_t db_ptr,
                            uint64_t hri_ptr, uint32_t size,
-                           GfxVersion gfxVersion)
+                           GfxVersion gfxVersion, uint16_t vmid)
           : basePointer(base_ptr), doorbellPointer(db_ptr),
             writeIndex(0), readIndex(0),
             numElts(size / AQL_PACKET_SIZE), hostReadIndexPtr(hri_ptr),
-            stalledOnDmaBufAvailability(false),
+            vmid(vmid), stalledOnDmaBufAvailability(false),
             dmaInProgress(false), gfxVersion(gfxVersion)
         {  }
         uint64_t spaceRemaining() { return numElts - (writeIndex - readIndex); }
@@ -352,7 +353,8 @@ class HSAPacketProcessor: public DmaVirtDevice
                             uint64_t queue_id,
                             uint32_t size, int doorbellSize,
                             GfxVersion gfxVersion,
-                            Addr offset = 0, uint64_t rd_idx = 0);
+                            Addr offset = 0, uint64_t rd_idx = 0,
+                            uint16_t vmid = 1);
     void unsetDeviceQueueDesc(uint64_t queue_id, int doorbellSize);
     void setDevice(GPUCommandProcessor * dev);
     void setGPUDevice(AMDGPUDevice *gpu_device);
@@ -396,8 +398,8 @@ class HSAPacketProcessor: public DmaVirtDevice
 
     void updateReadDispIdDma();
     void cmdQueueCmdDma(HSAPacketProcessor *hsaPP, int pid, bool isRead,
-            uint32_t ix_start, unsigned num_pkts,
-            dma_series_ctx *series_ctx, void *dest_4debug);
+                        uint32_t ix_start, unsigned num_pkts,
+                        dma_series_ctx *series_ctx, void *dest_4debug);
     void handleReadDMA();
 };
 

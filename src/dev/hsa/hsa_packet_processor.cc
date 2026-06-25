@@ -114,14 +114,15 @@ HSAPacketProcessor::setDeviceQueueDesc(uint64_t hostReadIndexPointer,
                                        uint64_t queue_id,
                                        uint32_t size, int doorbellSize,
                                        GfxVersion gfxVersion,
-                                       Addr offset, uint64_t rd_idx)
+                                       Addr offset, uint64_t rd_idx,
+                                       uint16_t vmid)
 {
     DPRINTF(HSAPacketProcessor,
              "%s:base = %p, qID = %d, ze = %d\n", __FUNCTION__,
              (void *)basePointer, queue_id, size);
     hwSchdlr->registerNewQueue(hostReadIndexPointer,
                                basePointer, queue_id, size, doorbellSize,
-                               gfxVersion, offset, rd_idx);
+                               gfxVersion, offset, rd_idx, vmid);
 }
 
 AddrRangeList
