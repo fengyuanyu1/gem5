@@ -372,8 +372,9 @@ class HSAPacketProcessor: public DmaVirtDevice
     void schedAQLProcessing(uint32_t rl_idx, Tick delay);
 
     void sendAgentDispatchCompletionSignal(void *pkt,
-                                           hsa_signal_value_t signal);
-    void sendCompletionSignal(hsa_signal_value_t signal);
+                                           hsa_signal_value_t signal,
+                                           uint16_t vmid);
+    void sendCompletionSignal(hsa_signal_value_t signal, uint16_t vmid = 1);
 
     /**
      * Calls getCurrentEntry once the queueEntry has been dmaRead.
@@ -397,10 +398,18 @@ class HSAPacketProcessor: public DmaVirtDevice
     };
 
     void updateReadDispIdDma();
+    // DmaVirtDevice does not take a VMID argument. These wrappers set the
+    // active VMID until dmaVirt() synchronously builds its translation ranges.
+    void dmaReadVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                            void *data, uint16_t vmid, Tick delay = 0);
+    void dmaWriteVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                             void *data, uint16_t vmid, Tick delay = 0);
     void cmdQueueCmdDma(HSAPacketProcessor *hsaPP, int pid, bool isRead,
                         uint32_t ix_start, unsigned num_pkts,
                         dma_series_ctx *series_ctx, void *dest_4debug);
     void handleReadDMA();
+
+    uint16_t currentDMAVMID = 1;
 };
 
 } // namespace gem5

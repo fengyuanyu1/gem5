@@ -187,11 +187,35 @@ HSAPacketProcessor::translate(Addr vaddr, Addr size)
         return process->pTable->translateRange(vaddr, size);
     }
 
+    fatal_if(!currentDMAVMID,
+             "HSAPacketProcessor DMA requires a valid VMID\n");
+
     // In full system use the page tables setup by the kernel driver rather
     // than the CPU page tables.
-    return TranslationGenPtr(
-        new AMDGPUVM::UserTranslationGen(&gpuDevice->getVM(), walker,
-                                         1 /* vmid */, vaddr, size));
+    return TranslationGenPtr(new AMDGPUVM::UserTranslationGen(
+        &gpuDevice->getVM(), walker, currentDMAVMID, vaddr, size));
+}
+
+void
+HSAPacketProcessor::dmaReadVirtForVMID(Addr host_addr, unsigned size,
+                                       DmaCallback *cb, void *data,
+                                       uint16_t vmid, Tick delay)
+{
+    uint16_t prev_vmid = currentDMAVMID;
+    currentDMAVMID = vmid;
+    dmaReadVirt(host_addr, size, cb, data, delay);
+    currentDMAVMID = prev_vmid;
+}
+
+void
+HSAPacketProcessor::dmaWriteVirtForVMID(Addr host_addr, unsigned size,
+                                        DmaCallback *cb, void *data,
+                                        uint16_t vmid, Tick delay)
+{
+    uint16_t prev_vmid = currentDMAVMID;
+    currentDMAVMID = vmid;
+    dmaWriteVirt(host_addr, size, cb, data, delay);
+    currentDMAVMID = prev_vmid;
 }
 
 /**
@@ -216,8 +240,8 @@ HSAPacketProcessor::updateReadIndex(int pid, uint32_t rl_idx)
     DPRINTF(HSAPacketProcessor,
             "%s: read-pointer offset [0x%x]\n", __FUNCTION__, aqlbuf->rdIdx());
 
-    dmaWriteVirt((Addr)qDesc->hostReadIndexPtr, sizeof(aqlbuf->rdIdx()),
-                 cb, aqlbuf->rdIdxPtr());
+    dmaWriteVirtForVMID((Addr)qDesc->hostReadIndexPtr, sizeof(aqlbuf->rdIdx()),
+                        cb, aqlbuf->rdIdxPtr(), qDesc->vmid);
 
     DPRINTF(HSAPacketProcessor,
             "%s: rd-ptr offset [0x%x], wr-ptr offset [0x%x], space used = %d," \
@@ -294,6 +318,8 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
     // have header information at offset zero
     auto disp_pkt = (_hsa_dispatch_packet_t *)pkt;
     hsa_packet_type_t pkt_type = PKT_TYPE(disp_pkt);
+    uint16_t vmid = regdQList[rl_idx]->qCntxt.qDesc->vmid;
+
     if (IS_BARRIER(disp_pkt) &&
         regdQList[rl_idx]->compltnPending() > 0) {
         // If this packet is using the "barrier bit" to enforce ordering with
@@ -356,8 +382,9 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
                         auto cb = new DmaVirtCallback<int64_t>(
                             [ = ] (const uint32_t &dma_data)
                                 { dep_sgnl_rd_st->handleReadDMA(); }, 0);
-                        dmaReadVirt(signal_addr, sizeof(hsa_signal_value_t),
-                                    cb, signal_val);
+                        dmaReadVirtForVMID(signal_addr,
+                                           sizeof(hsa_signal_value_t), cb,
+                                           signal_val, vmid);
                         dep_sgnl_rd_st->pendingReads++;
                         DPRINTF(HSAPacketProcessor, "%s: Pending reads %d," \
                             " active list %d\n", __FUNCTION__,
@@ -369,8 +396,8 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
                     auto cb = new DmaVirtCallback<int64_t>(
                         [ = ] (const uint32_t &dma_data)
                             { dep_sgnl_rd_st->handleReadDMA(); }, 0);
-                    dmaReadVirt(signal_addr, sizeof(hsa_signal_value_t),
-                                cb, signal_val);
+                    dmaReadVirtForVMID(signal_addr, sizeof(hsa_signal_value_t),
+                                       cb, signal_val, vmid);
                     dep_sgnl_rd_st->pendingReads++;
                     DPRINTF(HSAPacketProcessor, "%s: Pending reads %d," \
                         " active list %d\n", __FUNCTION__,
@@ -399,7 +426,7 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
                        bar_and_pkt->completion_signal);
 
                 gpu_device->sendCompletionSignal(
-                    bar_and_pkt->completion_signal);
+                    bar_and_pkt->completion_signal, vmid);
             }
         }
         if (dep_sgnl_rd_st->pendingReads > 0) {
@@ -418,7 +445,7 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
         gpu_device->submitAgentDispatchPkt(
                 (void *)disp_pkt, rl_idx, host_pkt_addr);
         is_submitted = UNBLOCKED;
-        sendAgentDispatchCompletionSignal((void *)disp_pkt,0);
+        sendAgentDispatchCompletionSignal((void *)disp_pkt, 0, vmid);
     } else {
         fatal("Unsupported packet type %d\n", pkt_type);
     }
@@ -552,8 +579,8 @@ HSAPacketProcessor::getCommandsFromHost(int pid, uint32_t rl_idx)
             [ = ] (const uint32_t &dma_data)
                 { this->cmdQueueCmdDma(this, pid, true, dma_start_ix,
                                 num_2_xfer, series_ctx, aql_buf); }, 0);
-        dmaReadVirt(qDesc->ptr(umq_nxt), num_2_xfer * qDesc->objSize(),
-                    cb, aql_buf);
+        dmaReadVirtForVMID(qDesc->ptr(umq_nxt), num_2_xfer * qDesc->objSize(),
+                           cb, aql_buf, qDesc->vmid);
 
         aqlRingBuffer->saveHostDispAddr(qDesc->ptr(umq_nxt), num_2_xfer,
                                         dma_start_ix);
@@ -714,7 +741,7 @@ HSAPacketProcessor::finishPkt(void *pvPkt, uint32_t rl_idx)
 
 void
 HSAPacketProcessor::sendAgentDispatchCompletionSignal(
-    void *pkt, hsa_signal_value_t signal)
+    void *pkt, hsa_signal_value_t signal, uint16_t vmid)
 {
     auto agent_pkt = (_hsa_agent_dispatch_packet_t *)pkt;
     uint64_t signal_addr =
@@ -739,11 +766,13 @@ HSAPacketProcessor::sendAgentDispatchCompletionSignal(
     hsa_signal_value_t *new_signal = new hsa_signal_value_t;
     *new_signal = (hsa_signal_value_t) *prev_signal - 1;
 
-    dmaWriteVirt(signal_addr, sizeof(hsa_signal_value_t), nullptr, new_signal, 0);
+    dmaWriteVirtForVMID(signal_addr, sizeof(hsa_signal_value_t), nullptr,
+                        new_signal, vmid);
 }
 
 void
-HSAPacketProcessor::sendCompletionSignal(hsa_signal_value_t signal)
+HSAPacketProcessor::sendCompletionSignal(hsa_signal_value_t signal,
+                                         uint16_t vmid)
 {
     uint64_t signal_addr = (uint64_t) (((uint64_t *)signal) + 1);
     DPRINTF(HSAPacketProcessor, "Triggering completion signal: %x!\n",
@@ -762,7 +791,8 @@ HSAPacketProcessor::sendCompletionSignal(hsa_signal_value_t signal)
     hsa_signal_value_t *new_signal = new hsa_signal_value_t;
     *new_signal = (hsa_signal_value_t) *prev_signal - 1;
 
-    dmaWriteVirt(signal_addr, sizeof(hsa_signal_value_t), nullptr, new_signal, 0);
+    dmaWriteVirtForVMID(signal_addr, sizeof(hsa_signal_value_t), nullptr,
+                        new_signal, vmid);
 }
 
 } // namespace gem5
