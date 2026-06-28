@@ -110,19 +110,17 @@ HSAPacketProcessor::unsetDeviceQueueDesc(uint64_t queue_id, int doorbellSize)
 
 void
 HSAPacketProcessor::setDeviceQueueDesc(uint64_t hostReadIndexPointer,
-                                       uint64_t basePointer,
-                                       uint64_t queue_id,
+                                       uint64_t basePointer, uint64_t queue_id,
                                        uint32_t size, int doorbellSize,
-                                       GfxVersion gfxVersion,
-                                       Addr offset, uint64_t rd_idx,
-                                       uint16_t vmid)
+                                       GfxVersion gfxVersion, Addr offset,
+                                       uint64_t rd_idx, uint16_t vmid)
 {
     DPRINTF(HSAPacketProcessor,
              "%s:base = %p, qID = %d, ze = %d\n", __FUNCTION__,
              (void *)basePointer, queue_id, size);
-    hwSchdlr->registerNewQueue(hostReadIndexPointer,
-                               basePointer, queue_id, size, doorbellSize,
-                               gfxVersion, offset, rd_idx, vmid);
+    hwSchdlr->registerNewQueue(hostReadIndexPointer, basePointer, queue_id,
+                               size, doorbellSize, gfxVersion, offset, rd_idx,
+                               vmid);
 }
 
 AddrRangeList
@@ -407,8 +405,10 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
         }
         if (isReady) {
             assert(dep_sgnl_rd_st->pendingReads == 0);
-            DPRINTF(HSAPacketProcessor, "%s: Barrier packet completed" \
-                    " active list ID = %d\n", __FUNCTION__, rl_idx);
+            DPRINTF(HSAPacketProcessor,
+                    "%s: Barrier packet completed"
+                    " active list ID = %d\n",
+                    __FUNCTION__, rl_idx);
             is_submitted = UNBLOCKED;
             // Reset signal values
             dep_sgnl_rd_st->resetSigVals();
@@ -424,8 +424,8 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
 
                 regdQList[rl_idx]->setBarrierBit(true);
                 auto done = new EventFunctionWrapper(
-                    [=] { finishPkt((void *)bar_and_pkt, rl_idx); },
-                    name(), true);
+                    [=] { finishPkt((void *)bar_and_pkt, rl_idx); }, name(),
+                    true);
                 gpu_device->sendCompletionSignal(
                     bar_and_pkt->completion_signal, vmid, done);
             } else {
@@ -442,13 +442,14 @@ HSAPacketProcessor::processPkt(void* pkt, uint32_t rl_idx, Addr host_pkt_addr)
     } else if (pkt_type == HSA_PACKET_TYPE_INVALID) {
         fatal("Unsupported packet type HSA_PACKET_TYPE_INVALID");
     } else if (pkt_type == HSA_PACKET_TYPE_AGENT_DISPATCH) {
-        DPRINTF(HSAPacketProcessor, "%s: submitting agent dispatch pkt" \
-                " active list ID = %d\n", __FUNCTION__, rl_idx);
+        DPRINTF(HSAPacketProcessor,
+                "%s: submitting agent dispatch pkt"
+                " active list ID = %d\n",
+                __FUNCTION__, rl_idx);
         is_submitted = UNBLOCKED;
         auto agent_pkt = (_hsa_agent_dispatch_packet_t *)disp_pkt;
         auto finish_done = new EventFunctionWrapper(
-            [=] { finishPkt((void *)disp_pkt, rl_idx); },
-            name(), true);
+            [=] { finishPkt((void *)disp_pkt, rl_idx); }, name(), true);
         auto completion_done = new EventFunctionWrapper(
             [=] {
                 if (agent_pkt->completion_signal) {

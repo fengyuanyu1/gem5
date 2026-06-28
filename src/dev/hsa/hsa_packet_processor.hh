@@ -84,7 +84,7 @@ class HSAQueueDescriptor
         uint64_t     readIndex;
         uint32_t     numElts;
         uint64_t     hostReadIndexPtr;
-        uint16_t     vmid;
+        uint16_t vmid;
         bool         stalledOnDmaBufAvailability;
         bool         dmaInProgress;
         GfxVersion   gfxVersion;
@@ -92,11 +92,16 @@ class HSAQueueDescriptor
         HSAQueueDescriptor(uint64_t base_ptr, uint64_t db_ptr,
                            uint64_t hri_ptr, uint32_t size,
                            GfxVersion gfxVersion, uint16_t vmid)
-          : basePointer(base_ptr), doorbellPointer(db_ptr),
-            writeIndex(0), readIndex(0),
-            numElts(size / AQL_PACKET_SIZE), hostReadIndexPtr(hri_ptr),
-            vmid(vmid), stalledOnDmaBufAvailability(false),
-            dmaInProgress(false), gfxVersion(gfxVersion)
+            : basePointer(base_ptr),
+              doorbellPointer(db_ptr),
+              writeIndex(0),
+              readIndex(0),
+              numElts(size / AQL_PACKET_SIZE),
+              hostReadIndexPtr(hri_ptr),
+              vmid(vmid),
+              stalledOnDmaBufAvailability(false),
+              dmaInProgress(false),
+              gfxVersion(gfxVersion)
         {  }
         uint64_t spaceRemaining() { return numElts - (writeIndex - readIndex); }
         uint64_t spaceUsed() { return writeIndex - readIndex; }
@@ -349,12 +354,10 @@ class HSAPacketProcessor: public DmaVirtDevice
     ~HSAPacketProcessor();
     TranslationGenPtr translate(Addr vaddr, Addr size) override;
     void setDeviceQueueDesc(uint64_t hostReadIndexPointer,
-                            uint64_t basePointer,
-                            uint64_t queue_id,
+                            uint64_t basePointer, uint64_t queue_id,
                             uint32_t size, int doorbellSize,
-                            GfxVersion gfxVersion,
-                            Addr offset = 0, uint64_t rd_idx = 0,
-                            uint16_t vmid = 1);
+                            GfxVersion gfxVersion, Addr offset = 0,
+                            uint64_t rd_idx = 0, uint16_t vmid = 1);
     void unsetDeviceQueueDesc(uint64_t queue_id, int doorbellSize);
     void setDevice(GPUCommandProcessor * dev);
     void setGPUDevice(AMDGPUDevice *gpu_device);

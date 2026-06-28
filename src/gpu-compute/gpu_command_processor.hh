@@ -143,8 +143,8 @@ class GPUCommandProcessor : public DmaVirtDevice
     void updateHsaMailboxData(Addr signal_handle, uint64_t *mailbox_value,
                               int64_t diff, uint16_t vmid, Event *done_event);
     void updateHsaEventData(Addr signal_handle, Addr signal_slot_addr,
-                            uint64_t *event_value, int64_t diff,
-                            uint16_t vmid, Event *done_event);
+                            uint64_t *event_value, int64_t diff, uint16_t vmid,
+                            Event *done_event);
     void updateHsaEventTs(Addr signal_handle, amd_event_t *event_value,
                           bool has_event_value, uint64_t event_id,
                           int64_t diff, uint16_t vmid, Event *done_event);
@@ -281,8 +281,9 @@ class GPUCommandProcessor : public DmaVirtDevice
                     task->privMemPerItem());
 
             updateHsaSignal(task->amdQueue.queue_inactive_signal.handle, 1,
-                            task->vmid(), [ = ] (const uint64_t &dma_buffer)
-                                { WaitScratchDmaEvent(task, dma_buffer); });
+                            task->vmid(), [=](const uint64_t &dma_buffer) {
+                                WaitScratchDmaEvent(task, dma_buffer);
+                            });
 
         } else {
             DPRINTF(GPUCommandProc, "Sufficient scratch space, launching "

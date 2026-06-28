@@ -162,10 +162,11 @@ GPUCommandProcessor::completeTimingRead(int dispType)
     if (kernelDispatchList.size() == 0) {
         switch (dispType) {
           case ComputeUnit::SQCPort::SenderState::DISPATCH_KERNEL_OBJECT:
-            dispatchKernelObject(dispatchData.akc, dispatchData.raw_pkt,
-                    dispatchData.queue_id, dispatchData.host_pkt_addr,
-                    dispatchData.vmid);
-            break;
+              dispatchKernelObject(dispatchData.akc, dispatchData.raw_pkt,
+                                   dispatchData.queue_id,
+                                   dispatchData.host_pkt_addr,
+                                   dispatchData.vmid);
+              break;
           case ComputeUnit::SQCPort::SenderState::DISPATCH_PRELOAD_ARG:
             initPreload(dispatchData.akc, dispatchData.task);
             break;
@@ -276,11 +277,11 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
             DPRINTF(GPUCommandProc,
                     "sending system DMA read for kernel_object\n");
 
-            auto dma_callback = new DmaVirtCallback<uint32_t>(
-              [=](const uint32_t&) {
-                dispatchKernelObject(akc, raw_pkt, queue_id, host_pkt_addr,
-                                     vmid);
-              });
+            auto dma_callback =
+                new DmaVirtCallback<uint32_t>([=](const uint32_t &) {
+                    dispatchKernelObject(akc, raw_pkt, queue_id, host_pkt_addr,
+                                         vmid);
+                });
 
             dmaReadVirtForVMID(disp_pkt->kernel_object, sizeof(AMDKernelCode),
                                dma_callback, (void *)akc, vmid);
@@ -325,8 +326,8 @@ GPUCommandProcessor::submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
 
 void
 GPUCommandProcessor::dispatchKernelObject(AMDKernelCode *akc, void *raw_pkt,
-                                        uint32_t queue_id, Addr host_pkt_addr,
-                                        uint16_t vmid)
+                                          uint32_t queue_id,
+                                          Addr host_pkt_addr, uint16_t vmid)
 {
     _hsa_dispatch_packet_t *disp_pkt = (_hsa_dispatch_packet_t*)raw_pkt;
 
@@ -375,9 +376,9 @@ GPUCommandProcessor::dispatchKernelObject(AMDKernelCode *akc, void *raw_pkt,
 
     GfxVersion gfxVersion = FullSystem ? gpuDevice->getGfxVersion()
                           : driver()->getGfxVersion();
-    HSAQueueEntry *task = new HSAQueueEntry(kernel_name, queue_id,
-        dynamic_task_id, raw_pkt, akc, host_pkt_addr, machine_code_addr,
-        gfxVersion, vmid);
+    HSAQueueEntry *task =
+        new HSAQueueEntry(kernel_name, queue_id, dynamic_task_id, raw_pkt, akc,
+                          host_pkt_addr, machine_code_addr, gfxVersion, vmid);
 
     if (FullSystem && task->kernargAddr() != 0 && task->kernargSize() > 0) {
         Addr va = task->kernargAddr();
@@ -488,13 +489,12 @@ GPUCommandProcessor::sendCompletionSignal(Addr signal_handle, uint16_t vmid,
         * then just DMA the decremented value.
         */
         uint64_t signal_value = functionalReadHsaSignal(signal_handle);
-        updateHsaSignal(
-            signal_handle, signal_value - 1, vmid,
-            [=](const uint64_t &) {
-                if (done_event) {
-                    schedule(done_event, curTick());
-                }
-            });
+        updateHsaSignal(signal_handle, signal_value - 1, vmid,
+                        [=](const uint64_t &) {
+                            if (done_event) {
+                                schedule(done_event, curTick());
+                            }
+                        });
     } else {
         // The semantics of the HSA signal is to decrement the current
         // signal value by one. Do this asynchronously via DMAs and
@@ -510,11 +510,10 @@ GPUCommandProcessor::updateHsaSignalAsync(Addr signal_handle, int64_t diff,
 {
     Addr mailbox_addr = getHsaSignalMailboxAddr(signal_handle);
     uint64_t *mailbox_value = new uint64_t;
-    auto cb2 = new DmaVirtCallback<uint64_t>(
-        [=](const uint64_t &) {
-            updateHsaMailboxData(signal_handle, mailbox_value, diff, vmid,
-                                 done_event);
-        });
+    auto cb2 = new DmaVirtCallback<uint64_t>([=](const uint64_t &) {
+        updateHsaMailboxData(signal_handle, mailbox_value, diff, vmid,
+                             done_event);
+    });
     dmaReadVirtForVMID(mailbox_addr, sizeof(uint64_t), cb2,
                        (void *)mailbox_value, vmid);
     DPRINTF(GPUCommandProc, "updateHsaSignalAsync reading mailbox addr %lx\n",
@@ -529,17 +528,15 @@ GPUCommandProcessor::updateHsaMailboxData(Addr signal_handle,
 {
     Addr event_addr = getHsaSignalEventAddr(signal_handle);
 
-    DPRINTF(GPUCommandProc, "updateHsaMailboxData read %ld\n",
-            *mailbox_value);
+    DPRINTF(GPUCommandProc, "updateHsaMailboxData read %ld\n", *mailbox_value);
     if (*mailbox_value != 0) {
         // This is an interruptible signal. The mailbox contains the KFD
         // signal-page slot address for this event.
         Addr signal_slot_addr = *mailbox_value;
-        auto cb = new DmaVirtCallback<uint64_t>(
-            [=](const uint64_t &) {
-                updateHsaEventData(signal_handle, signal_slot_addr,
-                                   mailbox_value, diff, vmid, done_event);
-            });
+        auto cb = new DmaVirtCallback<uint64_t>([=](const uint64_t &) {
+            updateHsaEventData(signal_handle, signal_slot_addr, mailbox_value,
+                               diff, vmid, done_event);
+        });
         dmaReadVirtForVMID(event_addr, sizeof(uint64_t), cb,
                            (void *)mailbox_value, vmid);
     } else {
@@ -550,11 +547,10 @@ GPUCommandProcessor::updateHsaMailboxData(Addr signal_handle,
         amd_event_t *event_ts = new amd_event_t;
         event_ts->start_ts = dispatchStartTime[signal_handle];
         event_ts->end_ts = curTick() / sim_clock::as_int::ns;
-        auto cb = new DmaVirtCallback<uint64_t>(
-            [=](const uint64_t &) {
-                updateHsaEventTs(signal_handle, event_ts, false, 0, diff,
-                                 vmid, done_event);
-            });
+        auto cb = new DmaVirtCallback<uint64_t>([=](const uint64_t &) {
+            updateHsaEventTs(signal_handle, event_ts, false, 0, diff, vmid,
+                             done_event);
+        });
         dmaWriteVirtForVMID(ts_addr, sizeof(amd_event_t), cb, (void *)event_ts,
                             vmid);
         DPRINTF(GPUCommandProc, "updateHsaMailboxData reading timestamp addr "
@@ -587,11 +583,10 @@ GPUCommandProcessor::updateHsaEventData(Addr signal_handle,
 
     Addr ts_addr = signal_handle + offsetof(amd_signal_t, start_ts);
 
-    auto cb2 = new DmaVirtCallback<uint64_t>(
-        [=](const uint64_t &) {
-            updateHsaEventTs(signal_handle, event_ts, true, event_id, diff,
-                             vmid, done_event);
-        });
+    auto cb2 = new DmaVirtCallback<uint64_t>([=](const uint64_t &) {
+        updateHsaEventTs(signal_handle, event_ts, true, event_id, diff, vmid,
+                         done_event);
+    });
     dmaWriteVirtForVMID(ts_addr, sizeof(amd_event_t), cb2, (void *)event_ts,
                         vmid);
     DPRINTF(GPUCommandProc, "updateHsaEventData reading timestamp addr %lx\n",
@@ -614,11 +609,10 @@ GPUCommandProcessor::updateHsaEventTs(Addr signal_handle, amd_event_t *ts,
     Addr value_addr = getHsaSignalValueAddr(signal_handle);
 
     uint64_t *signal_value = new uint64_t;
-    auto cb = new DmaVirtCallback<uint64_t>(
-        [=](const uint64_t &) {
-            updateHsaSignalData(value_addr, diff, signal_value,
-                                has_event_value, event_id, vmid, done_event);
-        });
+    auto cb = new DmaVirtCallback<uint64_t>([=](const uint64_t &) {
+        updateHsaSignalData(value_addr, diff, signal_value, has_event_value,
+                            event_id, vmid, done_event);
+    });
     dmaReadVirtForVMID(value_addr, sizeof(uint64_t), cb, (void *)signal_value,
                        vmid);
     DPRINTF(GPUCommandProc, "updateHsaSignalAsync reading value addr %lx\n",
@@ -649,8 +643,8 @@ GPUCommandProcessor::updateHsaSignalData(Addr value_addr, int64_t diff,
         }
         updateHsaSignalDone(prev_value, done_event);
     });
-    dmaWriteVirtForVMID(value_addr, sizeof(uint64_t), cb,
-                        (void *)prev_value, vmid);
+    dmaWriteVirtForVMID(value_addr, sizeof(uint64_t), cb, (void *)prev_value,
+                        vmid);
 }
 
 void

@@ -394,14 +394,38 @@ class PM4Queue
     bool _ib;
     PM4MapQueues _pkt;
   public:
-    PM4Queue() : _id(0), _vmid(0), q(nullptr), _wptr(0), _offset(0),
-        _processing(false), _ib(false), _pkt() {}
-    PM4Queue(int id, QueueDesc *queue, Addr offset) :
-        _id(id), _vmid(0), q(queue), _wptr(queue->rptr), _ibWptr(0),
-        _offset(offset), _processing(false), _ib(false), _pkt() {}
-    PM4Queue(int id, QueueDesc *queue, Addr offset, PM4MapQueues *pkt) :
-        _id(id), _vmid(0), q(queue), _wptr(queue->rptr), _ibWptr(0),
-        _offset(offset), _processing(false), _ib(false), _pkt(*pkt) {}
+    PM4Queue()
+        : _id(0),
+          _vmid(0),
+          q(nullptr),
+          _wptr(0),
+          _offset(0),
+          _processing(false),
+          _ib(false),
+          _pkt()
+    {}
+    PM4Queue(int id, QueueDesc *queue, Addr offset)
+        : _id(id),
+          _vmid(0),
+          q(queue),
+          _wptr(queue->rptr),
+          _ibWptr(0),
+          _offset(offset),
+          _processing(false),
+          _ib(false),
+          _pkt()
+    {}
+    PM4Queue(int id, QueueDesc *queue, Addr offset, PM4MapQueues *pkt)
+        : _id(id),
+          _vmid(0),
+          q(queue),
+          _wptr(queue->rptr),
+          _ibWptr(0),
+          _offset(offset),
+          _processing(false),
+          _ib(false),
+          _pkt(*pkt)
+    {}
 
     QueueDesc *getMQD() { return q; }
     int id() { return _id; }

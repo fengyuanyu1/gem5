@@ -189,9 +189,8 @@ TranslationGenPtr
 SDMAEngine::translate(Addr vaddr, Addr size)
 {
     if (dmaTranslationMode == DMATranslationMode::GART) {
-        return TranslationGenPtr(
-            new AMDGPUVM::GARTTranslationGen(&gpuDevice->getVM(),
-                                             vaddr, size));
+        return TranslationGenPtr(new AMDGPUVM::GARTTranslationGen(
+            &gpuDevice->getVM(), vaddr, size));
     } else if (cur_vmid > 0) {
         // Only user translation is available to user queues (vmid > 0)
         return TranslationGenPtr(new AMDGPUVM::UserTranslationGen(
