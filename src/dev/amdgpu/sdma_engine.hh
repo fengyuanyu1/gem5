@@ -53,6 +53,12 @@ class SDMAEngine : public DmaVirtDevice
         SDMAPage
     };
 
+    enum class DMATranslationMode
+    {
+        Auto,
+        GART
+    };
+
     class SDMAQueue
     {
         Addr _base;
@@ -165,6 +171,7 @@ class SDMAEngine : public DmaVirtDevice
 
     AMDGPUDevice *gpuDevice;
     VegaISA::Walker *walker;
+    DMATranslationMode dmaTranslationMode = DMATranslationMode::Auto;
 
     /* processRLC will select the correct queue for the doorbell */
     std::array<Addr, 2> rlcInfo{};

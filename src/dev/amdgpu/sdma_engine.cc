@@ -188,7 +188,11 @@ SDMAEngine::getDeviceAddress(Addr raw_addr)
 TranslationGenPtr
 SDMAEngine::translate(Addr vaddr, Addr size)
 {
-    if (cur_vmid > 0) {
+    if (dmaTranslationMode == DMATranslationMode::GART) {
+        return TranslationGenPtr(
+            new AMDGPUVM::GARTTranslationGen(&gpuDevice->getVM(),
+                                             vaddr, size));
+    } else if (cur_vmid > 0) {
         // Only user translation is available to user queues (vmid > 0)
         return TranslationGenPtr(new AMDGPUVM::UserTranslationGen(
                                             &gpuDevice->getVM(), walker,
@@ -277,7 +281,12 @@ SDMAEngine::unregisterRLCQueue(Addr doorbell, bool unmap_static)
 
             auto cb = new DmaVirtCallback<uint32_t>(
                 [ = ] (const uint32_t &) { });
+            DMATranslationMode saved_mode = dmaTranslationMode;
+            dmaTranslationMode = DMATranslationMode::GART;
+            // RLC MQD addresses are stored after getGARTAddr(), so write
+            // them back through the privileged GART translation domain.
             dmaWriteVirt(rlc0.getMQDAddr(), sizeof(SDMAQueueDesc), cb, mqd);
+            dmaTranslationMode = saved_mode;
         } else {
             warn("RLC0 SDMAMQD address invalid\n");
         }
@@ -299,7 +308,12 @@ SDMAEngine::unregisterRLCQueue(Addr doorbell, bool unmap_static)
 
             auto cb = new DmaVirtCallback<uint32_t>(
                 [ = ] (const uint32_t &) { });
+            DMATranslationMode saved_mode = dmaTranslationMode;
+            dmaTranslationMode = DMATranslationMode::GART;
+            // RLC MQD addresses are stored after getGARTAddr(), so write
+            // them back through the privileged GART translation domain.
             dmaWriteVirt(rlc1.getMQDAddr(), sizeof(SDMAQueueDesc), cb, mqd);
+            dmaTranslationMode = saved_mode;
         } else {
             warn("RLC1 SDMAMQD address invalid\n");
         }
