@@ -173,17 +173,16 @@ GPUCommandProcessor::completeTimingRead(PacketPtr pkt, int dispType)
     delete ctx;
 
     switch (dispType) {
-      case ComputeUnit::SQCPort::SenderState::DISPATCH_KERNEL_OBJECT:
-          dispatchKernelObject(dispatchData.akc, dispatchData.raw_pkt,
-                               dispatchData.queue_id,
-                               dispatchData.host_pkt_addr,
-                               dispatchData.vmid);
-          break;
-      case ComputeUnit::SQCPort::SenderState::DISPATCH_PRELOAD_ARG:
+        case ComputeUnit::SQCPort::SenderState::DISPATCH_KERNEL_OBJECT:
+            dispatchKernelObject(
+                dispatchData.akc, dispatchData.raw_pkt, dispatchData.queue_id,
+                dispatchData.host_pkt_addr, dispatchData.vmid);
+            break;
+        case ComputeUnit::SQCPort::SenderState::DISPATCH_PRELOAD_ARG:
             initPreload(dispatchData.akc, dispatchData.task);
             break;
-      default:
-        panic("Unknown kernel dispatch timing read type %d", dispType);
+        default:
+            panic("Unknown kernel dispatch timing read type %d", dispType);
     }
 }
 
@@ -924,8 +923,8 @@ GPUCommandProcessor::readPreload(AMDKernelCode *akc, HSAQueueEntry *task)
                 initPreload(akc, task);
             });
 
-        dmaReadVirtForVMID(preload_addr,
-                           preload_size, cb, task->preloadArgs(), vmid);
+        dmaReadVirtForVMID(preload_addr, preload_size, cb, task->preloadArgs(),
+                           vmid);
     } else {
         // Read from GPU memory manager one cache line at a time to prevent
         // rare cases where the preload data spans two memory pages.
@@ -946,8 +945,8 @@ GPUCommandProcessor::readPreload(AMDKernelCode *akc, HSAQueueEntry *task)
                 dummy, BaseMMU::Mode::Read, is_system_page);
 
             Request::Flags flags = Request::PHYSICAL;
-            RequestPtr request = std::make_shared<Request>(chunk_addr,
-                gen.size(), flags, walker->getDevRequestor());
+            RequestPtr request = std::make_shared<Request>(
+                chunk_addr, gen.size(), flags, walker->getDevRequestor());
 
             PacketPtr readPkt = new Packet(request, MemCmd::ReadReq);
             readPkt->dataStatic((uint8_t *)task->preloadArgs()

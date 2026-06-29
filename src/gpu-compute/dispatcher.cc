@@ -152,9 +152,9 @@ GPUDispatcher::exec()
 
     /**
      * Dispatch always starts the launch acquire/invalidate for the kernel at
-     * the head of the queue before dispatching any of its workgroups. Once that
-     * invalidate has started, keep that kernel selected until the invalidate
-     * finishes and the dispatcher is scheduled again.
+     * the head of the queue before dispatching any of its workgroups. Once
+     * that invalidate has started, keep that kernel selected until the
+     * invalidate finishes and the dispatcher is scheduled again.
      */
     while (execIds.size() > fail_count) {
         int exec_id = execIds.front();
@@ -174,7 +174,7 @@ GPUDispatcher::exec()
          * The selected kernel's launch invalidate is in flight. Do not rotate
          * the queue or let a later kernel start its own launch invalidate.
          */
-        if (!task->isInvDone()){
+        if (!task->isInvDone()) {
             ++fail_count;
 
             DPRINTF(GPUDisp, "kernel %d failed to launch, due to [%d] pending"
