@@ -75,14 +75,65 @@ jobs:
               id: date
               run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
+    path-classifier:
+        runs-on: ubuntu-24.04
+        if: github.event.pull_request.draft == false
+        outputs:
+            run-all-ci: ${{ steps.classify.outputs.run-all-ci }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Classify changed paths
+              id: classify
+              run: |
+                  BASE_SHA="${{ github.event.pull_request.base.sha }}"
+                  HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+                  run_all_ci=false
+
+                  git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+
+                  while IFS= read -r path; do
+                      case "$path" in
+                          src/dev/amdgpu/amdgpu_device.hh|\
+                          src/dev/amdgpu/cosim_bridge.hh|\
+                          src/dev/amdgpu/SConscript|\
+                          src/dev/amdgpu/*Vfio*|\
+                          src/dev/amdgpu/*vfio*)
+                              run_all_ci=true
+                              ;;
+                          configs/example/gpufs/*|\
+                          src/dev/amdgpu/*|\
+                          src/dev/hsa/*|\
+                          src/gpu-compute/*|\
+                          tests/gem5/gpu_tests/*|\
+                          tests/gem5/resources/*/gpu*|\
+                          tests/gem5/resources/*/gcn*|\
+                          tests/gem5/resources/*/vega*|\
+                          tests/gem5/stdlib/*gpu*|\
+                          tests/gem5/stdlib/*gcn*|\
+                          tests/gem5/stdlib/*vega*)
+                              ;;
+                          *)
+                              run_all_ci=true
+                              ;;
+                      esac
+                  done < changed-files.txt
+
+                  echo "run-all-ci=$run_all_ci" >> "$GITHUB_OUTPUT"
+                  echo "Changed paths:"
+                  cat changed-files.txt
+                  echo "run-all-ci=$run_all_ci"
+
     unittests-all-fast-opt:
         strategy:
             matrix:
                 type: [fast, opt]
         runs-on: ubuntu-24.04
-        if: github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
-        needs: [pre-commit] # only runs if pre-commit passes.
+        needs: [pre-commit, path-classifier] # only runs if pre-commit passes.
         timeout-minutes: 60
         steps:
             - uses: actions/checkout@v4
@@ -138,9 +189,9 @@ jobs:
         # with Clang. It compiles build/ALL/gem5.fast to maximize the change
         # for compilation error to be exposed.
         runs-on: ubuntu-24.04
-        if: github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
         container: ghcr.io/gem5/clang-version-19:latest
-        needs: [pre-commit]
+        needs: [pre-commit, path-classifier]
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v4
@@ -150,9 +201,9 @@ jobs:
 
     vfio-user-compilation:
         runs-on: ubuntu-24.04
-        if: github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
-        needs: [pre-commit]
+        needs: [pre-commit, path-classifier]
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v4
@@ -170,8 +221,8 @@ jobs:
 
     macos-compilation:
         runs-on: macos-26
-        if: github.event.pull_request.draft == false
-        needs: [pre-commit, get-date]
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
+        needs: [pre-commit, get-date, path-classifier]
 
         strategy:
             fail-fast: false
@@ -207,11 +258,32 @@ jobs:
               run: scons build/ALL/gem5.${{ matrix.type }} -j $(sysctl -n hw.ncpu)
               timeout-minutes: 90
 
+    amdgpu-compilation:
+        runs-on: ubuntu-24.04
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci != 'true'
+        container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
+        needs: [pre-commit, get-date, path-classifier]
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Cache build/VEGA_X86
+              uses: actions/cache/restore@v4
+              with:
+                  path: build/VEGA_X86
+                  key: testlib-build-vega-${{ needs.get-date.outputs.date }}
+                  restore-keys: |
+                      testlib-build-vega
+
+            - name: Compile VEGA_X86 gem5.opt
+              working-directory: ${{ github.workspace }}
+              run: scons --no-compress-debug build/VEGA_X86/gem5.opt -j $(nproc)
+
     testlib-quick-gem5-builds:
         runs-on: ubuntu-24.04
-        if: github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
-        needs: [pre-commit, testlib-quick-matrix, get-date]
+        needs: [pre-commit, testlib-quick-matrix, get-date, path-classifier]
         strategy:
             matrix:
                 build-target: ${{ fromJson(needs.testlib-quick-matrix.outputs.build-matrix) }}
@@ -254,9 +326,9 @@ jobs:
     testlib-quick-execution:
         name: quick-tests
         runs-on: ubuntu-24.04
-        if: github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false && needs.path-classifier.outputs.run-all-ci == 'true'
         container: ghcr.io/gem5/ubuntu-24.04_all-dependencies:latest
-        needs: [pre-commit, testlib-quick-matrix, testlib-quick-gem5-builds]
+        needs: [pre-commit, testlib-quick-matrix, testlib-quick-gem5-builds, path-classifier]
         timeout-minutes: 360 # 6 hours
         strategy:
             fail-fast: false
@@ -341,7 +413,54 @@ jobs:
             - unittests-all-fast-opt
             - macos-compilation
             - pre-commit
+            - clang-format-check
+            - path-classifier
+            - amdgpu-compilation
             - vfio-user-compilation
             - gpu-tests
+        if: always() && github.event.pull_request.draft == false
         steps:
-            - run: echo "This job's status is ${{ job.status }}."
+            - name: Check required job results
+              env:
+                  RUN_ALL_CI: ${{ needs.path-classifier.outputs.run-all-ci }}
+                  PRE_COMMIT: ${{ needs.pre-commit.result }}
+                  CLANG_FORMAT: ${{ needs.clang-format-check.result }}
+                  PATH_CLASSIFIER: ${{ needs.path-classifier.result }}
+                  AMDGPU_COMPILATION: ${{ needs.amdgpu-compilation.result }}
+                  GPU_TESTS: ${{ needs.gpu-tests.result }}
+                  QUICK_TESTS: ${{ needs.testlib-quick-execution.result }}
+                  CLANG_FAST: ${{ needs.clang-fast-compilation.result }}
+                  UNITTESTS: ${{ needs.unittests-all-fast-opt.result }}
+                  MACOS: ${{ needs.macos-compilation.result }}
+                  VFIO_USER: ${{ needs.vfio-user-compilation.result }}
+              run: |
+                  failed=false
+
+                  require_success()
+                  {
+                      name="$1"
+                      result="$2"
+                      if [ "$result" != "success" ]; then
+                          echo "$name result is $result"
+                          failed=true
+                      fi
+                  }
+
+                  require_success pre-commit "$PRE_COMMIT"
+                  require_success clang-format-check "$CLANG_FORMAT"
+                  require_success path-classifier "$PATH_CLASSIFIER"
+                  require_success gpu-tests "$GPU_TESTS"
+
+                  if [ "$RUN_ALL_CI" = "true" ]; then
+                      require_success quick-tests "$QUICK_TESTS"
+                      require_success clang-fast-compilation "$CLANG_FAST"
+                      require_success unittests-all-fast-opt "$UNITTESTS"
+                      require_success macos-compilation "$MACOS"
+                      require_success vfio-user-compilation "$VFIO_USER"
+                  else
+                      require_success amdgpu-compilation "$AMDGPU_COMPILATION"
+                  fi
+
+                  if [ "$failed" = "true" ]; then
+                      exit 1
+                  fi
