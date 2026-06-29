@@ -73,10 +73,10 @@ AMDGPUInterruptHandler::intrPost()
 
 void
 AMDGPUInterruptHandler::prepareInterruptCookie(ContextID cntxt_id,
-                                                uint32_t ring_id,
-                                                uint32_t client_id,
-                                                uint32_t source_id,
-                                                unsigned node_id)
+                                               uint32_t ring_id,
+                                               uint32_t client_id,
+                                               uint32_t source_id,
+                                               unsigned node_id, uint32_t vmid)
 {
     assert(client_id == SOC15_IH_CLIENTID_RLC ||
            client_id == SOC15_IH_CLIENTID_SDMA0 ||
@@ -102,13 +102,39 @@ AMDGPUInterruptHandler::prepareInterruptCookie(ContextID cntxt_id,
     AMDGPUInterruptCookie *cookie = new AMDGPUInterruptCookie();
     memset(cookie, 0, sizeof(AMDGPUInterruptCookie));
 
-    // Currently only one process is supported and the first pasid from driver
-    // is always 0x8000. In the future this can be obtained from the PM4
-    // MAP_PROCESS packet and may need to be passed to this function.
+    assert(gpuDevice);
+
+    // gem5 only models two interrupt sources: CP_EOP (end-of-pipe, used for
+    // kernel completion signals) and TRAP_ID (debug traps). The real driver
+    // supports many more (page faults, thermal, etc.) which cosim does not
+    // need. See soc15_ih_clientid.h and kfd_device.c in ROCK-Kernel-Driver:
+    // https://github.com/RadeonOpenCompute/ROCK-Kernel-Driver
     //
-    // On a related note, leave vmid fields alone as they are only used for
-    // memory exceptions. Memory exceptions are not supported on gfx900.
-    cookie->pasid = 0x8000;
+    // CP_EOP carries a process context: the driver routes the interrupt to
+    // the owning process via the PASID and VMID fields. TRAP_ID has no
+    // process context; the driver uses intCtxId and ring_id to locate the
+    // queue that triggered the trap.
+    if (source_id == CP_EOP) {
+        fatal_if(vmid >= AMDGPU_VM_COUNT, "CP_EOP VMID %d exceeds max %d\n",
+                 vmid, AMDGPU_VM_COUNT);
+        if (vmid) {
+            // gem5 allocates VMIDs from 1, but MI300X KFD filters
+            // CP_EOP interrupts to compute VMIDs 8-15.  Clamp the
+            // reported vmId so the driver accepts this interrupt.
+            // The PASID (from pasidFromVMID) uses the real gem5 VMID
+            // and correctly identifies the owning process.
+
+            cookie->pasid = gpuDevice->pasidFromVMID(vmid);
+            cookie->vmId = vmid < AMDGPUDevice::AMDGPU_FIRST_COMPUTE_VMID
+                               ? AMDGPUDevice::AMDGPU_FIRST_COMPUTE_VMID
+                               : vmid;
+        } else {
+            cookie->pasid = 0x8000;
+        }
+    }
+    // TRAP_ID: no process context, pasid and vmId are not meaningful;
+    // cookie was already zeroed by memset above.
+
     cookie->timestamp_Lo = 0x40;
     cookie->clientId = client_id;
     cookie->sourceId = source_id;

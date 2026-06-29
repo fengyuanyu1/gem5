@@ -188,7 +188,10 @@ SDMAEngine::getDeviceAddress(Addr raw_addr)
 TranslationGenPtr
 SDMAEngine::translate(Addr vaddr, Addr size)
 {
-    if (cur_vmid > 0) {
+    if (dmaTranslationMode == DMATranslationMode::GART) {
+        return TranslationGenPtr(new AMDGPUVM::GARTTranslationGen(
+            &gpuDevice->getVM(), vaddr, size));
+    } else if (cur_vmid > 0) {
         // Only user translation is available to user queues (vmid > 0)
         return TranslationGenPtr(new AMDGPUVM::UserTranslationGen(
                                             &gpuDevice->getVM(), walker,
@@ -211,7 +214,7 @@ SDMAEngine::translate(Addr vaddr, Addr size)
 
 void
 SDMAEngine::registerRLCQueue(Addr doorbell, Addr mqdAddr, SDMAQueueDesc *mqd,
-                             bool isStatic)
+                             bool isStatic, uint16_t vmid)
 {
     uint32_t rlc_size = 4UL << bits(mqd->sdmax_rlcx_rb_cntl, 6, 1);
     Addr rptr_wb_addr = mqd->sdmax_rlcx_rb_rptr_addr_hi;
@@ -235,6 +238,7 @@ SDMAEngine::registerRLCQueue(Addr doorbell, Addr mqdAddr, SDMAQueueDesc *mqd,
         rlc0.setMQDAddr(mqdAddr);
         rlc0.setPriv(priv);
         rlc0.setStatic(isStatic);
+        rlc0.setVmid(vmid);
     } else if (!rlc1.valid()) {
         DPRINTF(SDMAEngine, "Doorbell %lx mapped to RLC1\n", doorbell);
         rlcInfo[1] = doorbell;
@@ -250,6 +254,7 @@ SDMAEngine::registerRLCQueue(Addr doorbell, Addr mqdAddr, SDMAQueueDesc *mqd,
         rlc1.setMQDAddr(mqdAddr);
         rlc1.setPriv(priv);
         rlc1.setStatic(isStatic);
+        rlc1.setVmid(vmid);
     } else {
         panic("No free RLCs. Check they are properly unmapped.");
     }
@@ -275,7 +280,12 @@ SDMAEngine::unregisterRLCQueue(Addr doorbell, bool unmap_static)
 
             auto cb = new DmaVirtCallback<uint32_t>(
                 [ = ] (const uint32_t &) { });
+            DMATranslationMode saved_mode = dmaTranslationMode;
+            dmaTranslationMode = DMATranslationMode::GART;
+            // RLC MQD addresses are stored after getGARTAddr(), so write
+            // them back through the privileged GART translation domain.
             dmaWriteVirt(rlc0.getMQDAddr(), sizeof(SDMAQueueDesc), cb, mqd);
+            dmaTranslationMode = saved_mode;
         } else {
             warn("RLC0 SDMAMQD address invalid\n");
         }
@@ -297,7 +307,12 @@ SDMAEngine::unregisterRLCQueue(Addr doorbell, bool unmap_static)
 
             auto cb = new DmaVirtCallback<uint32_t>(
                 [ = ] (const uint32_t &) { });
+            DMATranslationMode saved_mode = dmaTranslationMode;
+            dmaTranslationMode = DMATranslationMode::GART;
+            // RLC MQD addresses are stored after getGARTAddr(), so write
+            // them back through the privileged GART translation domain.
             dmaWriteVirt(rlc1.getMQDAddr(), sizeof(SDMAQueueDesc), cb, mqd);
+            dmaTranslationMode = saved_mode;
         } else {
             warn("RLC1 SDMAMQD address invalid\n");
         }
@@ -363,7 +378,7 @@ SDMAEngine::processRLC0(Addr wptrOffset)
 
     rlc0.setWptr(wptrOffset);
     if (!rlc0.processing()) {
-        cur_vmid = 1;
+        cur_vmid = rlc0.vmid();
         rlc0.processing(true);
         decodeNext(&rlc0);
     }
@@ -377,7 +392,7 @@ SDMAEngine::processRLC1(Addr wptrOffset)
 
     rlc1.setWptr(wptrOffset);
     if (!rlc1.processing()) {
-        cur_vmid = 1;
+        cur_vmid = rlc1.vmid();
         rlc1.processing(true);
         decodeNext(&rlc1);
     }
@@ -974,7 +989,9 @@ SDMAEngine::trap(SDMAQueue *q, sdmaTrap *pkt)
     }
     gpuDevice->getIH()->prepareInterruptCookie(pkt->intrContext, ring_id,
                                                getIHClientId(local_id),
-                                               TRAP_ID, 2*node_id);
+                                               TRAP_ID, 2*node_id,
+                                               0 /* vmid: TRAP has no
+                                                   process context */);
     gpuDevice->getIH()->submitInterruptCookie();
 
     delete pkt;

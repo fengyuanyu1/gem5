@@ -84,18 +84,24 @@ class HSAQueueDescriptor
         uint64_t     readIndex;
         uint32_t     numElts;
         uint64_t     hostReadIndexPtr;
+        uint16_t vmid;
         bool         stalledOnDmaBufAvailability;
         bool         dmaInProgress;
         GfxVersion   gfxVersion;
 
         HSAQueueDescriptor(uint64_t base_ptr, uint64_t db_ptr,
                            uint64_t hri_ptr, uint32_t size,
-                           GfxVersion gfxVersion)
-          : basePointer(base_ptr), doorbellPointer(db_ptr),
-            writeIndex(0), readIndex(0),
-            numElts(size / AQL_PACKET_SIZE), hostReadIndexPtr(hri_ptr),
-            stalledOnDmaBufAvailability(false),
-            dmaInProgress(false), gfxVersion(gfxVersion)
+                           GfxVersion gfxVersion, uint16_t vmid)
+            : basePointer(base_ptr),
+              doorbellPointer(db_ptr),
+              writeIndex(0),
+              readIndex(0),
+              numElts(size / AQL_PACKET_SIZE),
+              hostReadIndexPtr(hri_ptr),
+              vmid(vmid),
+              stalledOnDmaBufAvailability(false),
+              dmaInProgress(false),
+              gfxVersion(gfxVersion)
         {  }
         uint64_t spaceRemaining() { return numElts - (writeIndex - readIndex); }
         uint64_t spaceUsed() { return writeIndex - readIndex; }
@@ -348,11 +354,10 @@ class HSAPacketProcessor: public DmaVirtDevice
     ~HSAPacketProcessor();
     TranslationGenPtr translate(Addr vaddr, Addr size) override;
     void setDeviceQueueDesc(uint64_t hostReadIndexPointer,
-                            uint64_t basePointer,
-                            uint64_t queue_id,
+                            uint64_t basePointer, uint64_t queue_id,
                             uint32_t size, int doorbellSize,
-                            GfxVersion gfxVersion,
-                            Addr offset = 0, uint64_t rd_idx = 0);
+                            GfxVersion gfxVersion, Addr offset = 0,
+                            uint64_t rd_idx = 0, uint16_t vmid = 1);
     void unsetDeviceQueueDesc(uint64_t queue_id, int doorbellSize);
     void setDevice(GPUCommandProcessor * dev);
     void setGPUDevice(AMDGPUDevice *gpu_device);
@@ -368,10 +373,6 @@ class HSAPacketProcessor: public DmaVirtDevice
     void finishPkt(void *pkt) { finishPkt(pkt, 0); }
     void schedAQLProcessing(uint32_t rl_idx);
     void schedAQLProcessing(uint32_t rl_idx, Tick delay);
-
-    void sendAgentDispatchCompletionSignal(void *pkt,
-                                           hsa_signal_value_t signal);
-    void sendCompletionSignal(hsa_signal_value_t signal);
 
     /**
      * Calls getCurrentEntry once the queueEntry has been dmaRead.
@@ -395,10 +396,18 @@ class HSAPacketProcessor: public DmaVirtDevice
     };
 
     void updateReadDispIdDma();
+    // DmaVirtDevice does not take a VMID argument. These wrappers set the
+    // active VMID until dmaVirt() synchronously builds its translation ranges.
+    void dmaReadVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                            void *data, uint16_t vmid, Tick delay = 0);
+    void dmaWriteVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                             void *data, uint16_t vmid, Tick delay = 0);
     void cmdQueueCmdDma(HSAPacketProcessor *hsaPP, int pid, bool isRead,
-            uint32_t ix_start, unsigned num_pkts,
-            dma_series_ctx *series_ctx, void *dest_4debug);
+                        uint32_t ix_start, unsigned num_pkts,
+                        dma_series_ctx *series_ctx, void *dest_4debug);
     void handleReadDMA();
+
+    uint16_t currentDMAVMID = 1;
 };
 
 } // namespace gem5

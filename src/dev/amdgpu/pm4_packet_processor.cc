@@ -200,8 +200,8 @@ PM4PacketProcessor::mapPq(Addr offset)
 }
 
 void
-PM4PacketProcessor::newQueue(QueueDesc *mqd, Addr offset,
-                             PM4MapQueues *pkt, int id)
+PM4PacketProcessor::newQueue(QueueDesc *mqd, Addr offset, PM4MapQueues *pkt,
+                             int id, uint16_t vmid)
 {
     if (id == -1)
         id = queues.size();
@@ -212,6 +212,8 @@ PM4PacketProcessor::newQueue(QueueDesc *mqd, Addr offset,
 
     queuesMap[offset] = q;
     queues[id] = q;
+
+    q->vmid(vmid);
 
     /* we are assumming only compute queues can be map from MQDs */
     QueueType qt;
@@ -520,6 +522,11 @@ PM4PacketProcessor::mapQueues(PM4Queue *q, PM4MapQueues *pkt)
             pkt->checkDisable, pkt->doorbellOffset, pkt->mqdAddr,
             pkt->wptrAddr);
 
+    // Some current MAP_QUEUES packets arrive with vmid == 0. Use lastVMID()
+    // only as a compatibility fallback for the single-PASID ordering exercised
+    // by existing tests; it is not a stable owner lookup if PASIDs interleave.
+    const uint16_t queue_vmid = pkt->vmid ? pkt->vmid : gpuDevice->lastVMID();
+
     // Partially reading the mqd with an offset of 96 dwords
     if (pkt->engineSel == 0 || pkt->engineSel == 1 || pkt->engineSel == 4) {
         Addr addr = getGARTAddr(pkt->mqdAddr + 96 * sizeof(uint32_t));
@@ -531,14 +538,13 @@ PM4PacketProcessor::mapQueues(PM4Queue *q, PM4MapQueues *pkt)
         // The doorbellOffset is a dword address. We shift by two / multiply
         // by four to get the byte address to match doorbell addresses in
         // the GPU device.
-        gpuDevice->mapDoorbellToVMID(pkt->doorbellOffset << 2,
-                                     gpuDevice->lastVMID());
+        gpuDevice->mapDoorbellToVMID(pkt->doorbellOffset << 2, queue_vmid);
 
         QueueDesc *mqd = new QueueDesc();
         memset(mqd, 0, sizeof(QueueDesc));
-        auto cb = new DmaVirtCallback<uint32_t>(
-            [ = ] (const uint32_t &) {
-                processMQD(pkt, q, addr, mqd, gpuDevice->lastVMID()); });
+        auto cb = new DmaVirtCallback<uint32_t>([=](const uint32_t &) {
+            processMQD(pkt, q, addr, mqd, queue_vmid);
+        });
         dmaReadVirt(addr, sizeof(QueueDesc), cb, mqd);
     } else if (pkt->engineSel == 2 || pkt->engineSel == 3) {
         SDMAQueueDesc *sdmaMQD = new SDMAQueueDesc();
@@ -547,10 +553,9 @@ PM4PacketProcessor::mapQueues(PM4Queue *q, PM4MapQueues *pkt)
         // For SDMA we read the full MQD, so there is no offset calculation.
         Addr addr = getGARTAddr(pkt->mqdAddr);
 
-        auto cb = new DmaVirtCallback<uint32_t>(
-            [ = ] (const uint32_t &) {
-                processSDMAMQD(pkt, q, addr, sdmaMQD,
-                               gpuDevice->lastVMID()); });
+        auto cb = new DmaVirtCallback<uint32_t>([=](const uint32_t &) {
+            processSDMAMQD(pkt, q, addr, sdmaMQD, queue_vmid);
+        });
         dmaReadVirt(addr, sizeof(SDMAQueueDesc), cb, sdmaMQD);
     } else {
         panic("Unknown engine for MQD: %d\n", pkt->engineSel);
@@ -566,9 +571,13 @@ PM4PacketProcessor::processMQD(PM4MapQueues *pkt, PM4Queue *q, Addr addr,
             mqd->hqd_vmid, mqd->base, mqd->rptr, mqd->aqlRptr);
 
     Addr offset = mqd->doorbell & 0x1ffffffc;
-    newQueue(mqd, offset, pkt);
+    if (mqd->hqd_vmid && mqd->hqd_vmid != vmid) {
+        warn("processMQD: MQD hqd_vmid %u differs from captured vmid %u\n",
+             mqd->hqd_vmid, vmid);
+    }
+    newQueue(mqd, offset, pkt, -1, vmid);
     PM4Queue *new_q = queuesMap[offset];
-    gpuDevice->insertQId(vmid, new_q->id());
+    gpuDevice->insertQId(new_q->vmid(), new_q->id());
 
     if (mqd->aql) {
         // The queue size is encoded in the cp_hqd_pq_control field in the
@@ -584,7 +593,7 @@ PM4PacketProcessor::processMQD(PM4MapQueues *pkt, PM4Queue *q, Addr addr,
         auto &hsa_pp = gpuDevice->CP()->hsaPacketProc();
         hsa_pp.setDeviceQueueDesc(mqd->aqlRptr, mqd->base, new_q->id(),
                                   mqd_size, 8, GfxVersion::gfx900, offset,
-                                  mqd->mqdReadIndex);
+                                  mqd->mqdReadIndex, new_q->vmid());
     }
 
     DPRINTF(PM4PacketProcessor, "PM4 mqd read completed, base %p, mqd %p, "
@@ -620,7 +629,8 @@ PM4PacketProcessor::processSDMAMQD(PM4MapQueues *pkt, PM4Queue *q, Addr addr,
     bool is_static = (pkt->queueType == 2) || (pkt->queueType == 3);
 
     // Register RLC queue with SDMA
-    sdma_eng->registerRLCQueue(pkt->doorbellOffset << 2, addr, mqd, is_static);
+    sdma_eng->registerRLCQueue(pkt->doorbellOffset << 2, addr, mqd, is_static,
+                               vmid);
 
     // Register doorbell with GPU device
     gpuDevice->setSDMAEngine(pkt->doorbellOffset << 2, sdma_eng);
@@ -722,9 +732,9 @@ PM4PacketProcessor::releaseMemDone(PM4Queue *q, PM4ReleaseMem *pkt, Addr addr)
         if (q->id() != 0) {
             ringId = (q->queue() << 4) | (q->me() << 2) | q->pipe();
         }
-        gpuDevice->getIH()->prepareInterruptCookie(pkt->intCtxId, ringId,
-                                            SOC15_IH_CLIENTID_GRBM_CP, CP_EOP,
-                                            2 * getIpId());
+        gpuDevice->getIH()->prepareInterruptCookie(
+            pkt->intCtxId, ringId, SOC15_IH_CLIENTID_GRBM_CP, CP_EOP,
+            2 * getIpId(), q->vmid());
         gpuDevice->getIH()->submitInterruptCookie();
     }
 
@@ -781,6 +791,21 @@ PM4PacketProcessor::unmapAllQueues(bool unmap_static)
 }
 
 void
+PM4PacketProcessor::deallocateQueue(Addr doorbell)
+{
+    auto result = queuesMap.find(doorbell);
+    if (result == queuesMap.end()) {
+        result = queuesMap.find(doorbell << 2);
+    }
+
+    panic_if(result == queuesMap.end(),
+             "Cannot find PM4 queue for doorbell %#lx\n", doorbell);
+
+    PM4Queue *queue = result->second;
+    gpuDevice->removeQId(queue->vmid(), queue->id());
+}
+
+void
 PM4PacketProcessor::unmapQueues(PM4Queue *q, PM4UnmapQueues *pkt)
 {
     q->incRptr(sizeof(PM4UnmapQueues));
@@ -791,38 +816,22 @@ PM4PacketProcessor::unmapQueues(PM4Queue *q, PM4UnmapQueues *pkt)
 
     switch (pkt->queueSel) {
       case 0:
-        switch (pkt->numQueues) {
-          case 1:
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset0));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset1));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset2));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset3));
-            break;
-          case 2:
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset1));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset2));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset3));
-            break;
-          case 3:
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset2));
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset3));
-            break;
-          case 4:
-            gpuDevice->deallocateVmid(
-                    gpuDevice->getVMID(pkt->doorbellOffset3));
-            break;
-          default:
-            panic("Unrecognized number of queues %d\n", pkt->numQueues);
-        }
+          switch (pkt->numQueues) {
+              case 4:
+                  deallocateQueue(pkt->doorbellOffset3);
+                  [[fallthrough]];
+              case 3:
+                  deallocateQueue(pkt->doorbellOffset2);
+                  [[fallthrough]];
+              case 2:
+                  deallocateQueue(pkt->doorbellOffset1);
+                  [[fallthrough]];
+              case 1:
+                  deallocateQueue(pkt->doorbellOffset0);
+                  break;
+              default:
+                  panic("Unrecognized number of queues %d\n", pkt->numQueues);
+          }
         break;
       case 1:
         gpuDevice->deallocatePasid(pkt->pasid);
@@ -1402,6 +1411,7 @@ PM4PacketProcessor::serialize(CheckpointOut &cp) const
     auto queue_type = std::make_unique<uint32_t[]>(num_queues);
     auto hqd_active = std::make_unique<uint32_t[]>(num_queues);
     auto hqd_vmid = std::make_unique<uint32_t[]>(num_queues);
+    auto queue_vmid = std::make_unique<uint16_t[]>(num_queues);
     auto aql_rptr = std::make_unique<Addr[]>(num_queues);
     auto aql = std::make_unique<uint32_t[]>(num_queues);
     auto doorbell = std::make_unique<uint32_t[]>(num_queues);
@@ -1433,6 +1443,7 @@ PM4PacketProcessor::serialize(CheckpointOut &cp) const
         queue_type[i] = q->queueType();
         hqd_active[i] = q->getMQD()->hqd_active;
         hqd_vmid[i] = q->getMQD()->hqd_vmid;
+        queue_vmid[i] = q->vmid();
         aql_rptr[i] = q->getMQD()->aqlRptr;
         aql[i] = q->getMQD()->aql;
         doorbell[i] = q->getMQD()->doorbell;
@@ -1460,6 +1471,7 @@ PM4PacketProcessor::serialize(CheckpointOut &cp) const
     SERIALIZE_UNIQUE_PTR_ARRAY(queue_type, num_queues);
     SERIALIZE_UNIQUE_PTR_ARRAY(hqd_active, num_queues);
     SERIALIZE_UNIQUE_PTR_ARRAY(hqd_vmid, num_queues);
+    SERIALIZE_UNIQUE_PTR_ARRAY(queue_vmid, num_queues);
     SERIALIZE_UNIQUE_PTR_ARRAY(aql_rptr, num_queues);
     SERIALIZE_UNIQUE_PTR_ARRAY(aql, num_queues);
     SERIALIZE_UNIQUE_PTR_ARRAY(doorbell, num_queues);
@@ -1494,6 +1506,7 @@ PM4PacketProcessor::unserialize(CheckpointIn &cp)
     auto queue_type = std::make_unique<uint32_t[]>(num_queues);
     auto hqd_active = std::make_unique<uint32_t[]>(num_queues);
     auto hqd_vmid = std::make_unique<uint32_t[]>(num_queues);
+    auto queue_vmid = std::make_unique<uint16_t[]>(num_queues);
     auto aql_rptr = std::make_unique<Addr[]>(num_queues);
     auto aql = std::make_unique<uint32_t[]>(num_queues);
     auto doorbell = std::make_unique<uint32_t[]>(num_queues);
@@ -1518,6 +1531,7 @@ PM4PacketProcessor::unserialize(CheckpointIn &cp)
     UNSERIALIZE_UNIQUE_PTR_ARRAY(queue_type, num_queues);
     UNSERIALIZE_UNIQUE_PTR_ARRAY(hqd_active, num_queues);
     UNSERIALIZE_UNIQUE_PTR_ARRAY(hqd_vmid, num_queues);
+    UNSERIALIZE_UNIQUE_PTR_ARRAY(queue_vmid, num_queues);
     UNSERIALIZE_UNIQUE_PTR_ARRAY(aql_rptr, num_queues);
     UNSERIALIZE_UNIQUE_PTR_ARRAY(aql, num_queues);
     UNSERIALIZE_UNIQUE_PTR_ARRAY(doorbell, num_queues);
@@ -1534,7 +1548,7 @@ PM4PacketProcessor::unserialize(CheckpointIn &cp)
 
         PM4MapQueues* pkt = new PM4MapQueues;
         memset(pkt, 0, sizeof(PM4MapQueues));
-        newQueue(mqd, offset[i], pkt, id[i]);
+        newQueue(mqd, offset[i], pkt, id[i], queue_vmid[i]);
 
         if (ib[i]) {
             queues[id[i]]->wptr(ib_wptr[i]);
@@ -1557,9 +1571,9 @@ PM4PacketProcessor::unserialize(CheckpointIn &cp)
         if (mqd->aql) {
             int mqd_size = (1 << ((hqd_pq_control[i] & 0x3f) + 1)) * 4;
             auto &hsa_pp = gpuDevice->CP()->hsaPacketProc();
-            hsa_pp.setDeviceQueueDesc(aql_rptr[i], base[i], id[i],
-                                  mqd_size, 8, GfxVersion::gfx900, offset[i],
-                                  mqd_read_index[i]);
+            hsa_pp.setDeviceQueueDesc(aql_rptr[i], base[i], id[i], mqd_size, 8,
+                                      GfxVersion::gfx900, offset[i],
+                                      mqd_read_index[i], queue_vmid[i]);
         }
 
         DPRINTF(PM4PacketProcessor, "PM4 queue %d, rptr: %p wptr: %p\n",

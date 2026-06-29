@@ -174,7 +174,8 @@ class AMDGPUInterruptHandler : public DmaDevice
 
     void setGPUDevice(AMDGPUDevice *gpu_device) { gpuDevice = gpu_device; }
     void prepareInterruptCookie(ContextID cntxtId, uint32_t ring_id,
-        uint32_t client_id, uint32_t source_id, unsigned node_id);
+                                uint32_t client_id, uint32_t source_id,
+                                unsigned node_id, uint32_t vmid);
     void submitInterruptCookie();
     void submitWritePointer();
     void intrPost();

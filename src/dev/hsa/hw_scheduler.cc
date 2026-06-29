@@ -83,11 +83,10 @@ HWScheduler::schedWakeup()
 
 void
 HWScheduler::registerNewQueue(uint64_t hostReadIndexPointer,
-                              uint64_t basePointer,
-                              uint64_t queue_id,
+                              uint64_t basePointer, uint64_t queue_id,
                               uint32_t size, int doorbellSize,
-                              GfxVersion gfxVersion,
-                              Addr offset, uint64_t rd_idx)
+                              GfxVersion gfxVersion, Addr offset,
+                              uint64_t rd_idx, uint16_t vmid)
 {
     assert(queue_id < MAX_ACTIVE_QUEUES);
     // Map queue ID to doorbell.
@@ -109,9 +108,8 @@ HWScheduler::registerNewQueue(uint64_t hostReadIndexPointer,
               " beyond PIO range", queue_id);
     }
 
-    HSAQueueDescriptor* q_desc =
-       new HSAQueueDescriptor(basePointer, offset,
-                              hostReadIndexPointer, size, gfxVersion);
+    HSAQueueDescriptor *q_desc = new HSAQueueDescriptor(
+        basePointer, offset, hostReadIndexPointer, size, gfxVersion, vmid);
     AQLRingBuffer* aql_buf =
         new AQLRingBuffer(NUM_DMA_BUFS, hsaPP->name());
     if (rd_idx > 0) {

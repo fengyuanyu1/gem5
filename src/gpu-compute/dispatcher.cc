@@ -40,6 +40,7 @@
 #include "gpu-compute/hsa_queue_entry.hh"
 #include "gpu-compute/shader.hh"
 #include "gpu-compute/wavefront.hh"
+#include "sim/eventq.hh"
 #include "sim/sim_exit.hh"
 #include "sim/syscall_emul_buf.hh"
 #include "sim/system.hh"
@@ -312,19 +313,25 @@ GPUDispatcher::notifyWgCompl(Wavefront *wf)
                  "skipping completion handling",
                  kern_id, task->queueId());
         } else {
-            // Notify the HSA PP that this kernel is complete
-            gpuCmdProc->hsaPacketProc().finishPkt(task->dispPktPtr(),
-                                                  task->queueId());
+            auto *disp_pkt_ptr = task->dispPktPtr();
+            auto queue_id = task->queueId();
+            auto finish_pkt = [=] {
+                gpuCmdProc->hsaPacketProc().finishPkt(disp_pkt_ptr, queue_id);
+            };
+
             if (task->completionSignal()) {
                 DPRINTF(GPUDisp,
                         "HSA AQL Kernel Complete with completion "
                         "signal! Addr: %d\n",
                         task->completionSignal());
 
-                gpuCmdProc->sendCompletionSignal(task->completionSignal());
+                auto done = new EventFunctionWrapper(finish_pkt, name(), true);
+                gpuCmdProc->sendCompletionSignal(task->completionSignal(),
+                                                 task->vmid(), done);
             } else {
                 DPRINTF(GPUDisp, "HSA AQL Kernel Complete! No completion "
                                  "signal\n");
+                finish_pkt();
             }
         }
 

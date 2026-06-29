@@ -64,6 +64,7 @@ namespace gem5
 {
 
 struct GPUCommandProcessorParams;
+class Event;
 class GPUComputeDriver;
 class GPUDispatcher;
 class Shader;
@@ -92,6 +93,7 @@ class GPUCommandProcessor : public DmaVirtDevice
         void *raw_pkt = nullptr;
         uint32_t queue_id = 0;
         Addr host_pkt_addr = 0;
+        uint16_t vmid = 0;
         PacketPtr readPkt = nullptr;
         HSAQueueEntry *task = nullptr;
     };
@@ -109,7 +111,7 @@ class GPUCommandProcessor : public DmaVirtDevice
     void completeTimingRead(int dispType);
 
     void submitAgentDispatchPkt(void *raw_pkt, uint32_t queue_id,
-                           Addr host_pkt_addr);
+                                Addr host_pkt_addr, Event *done_event);
     void submitDispatchPkt(void *raw_pkt, uint32_t queue_id,
                            Addr host_pkt_addr);
     void submitVendorPkt(void *raw_pkt, uint32_t queue_id,
@@ -117,7 +119,8 @@ class GPUCommandProcessor : public DmaVirtDevice
     void attachDriver(GPUComputeDriver *driver);
 
     void dispatchKernelObject(AMDKernelCode *akc, void *raw_pkt,
-                              uint32_t queue_id, Addr host_pkt_addr);
+                              uint32_t queue_id, Addr host_pkt_addr,
+                              uint16_t vmid);
     void dispatchPkt(HSAQueueEntry *task);
     void signalWakeupEvent(uint32_t event_id);
 
@@ -126,18 +129,25 @@ class GPUCommandProcessor : public DmaVirtDevice
     AddrRangeList getAddrRanges() const override;
     System *system();
 
-    void sendCompletionSignal(Addr signal_handle);
+    void sendCompletionSignal(Addr signal_handle, uint16_t vmid,
+                              Event *done_event = nullptr);
     void updateHsaSignal(Addr signal_handle, uint64_t signal_value,
-                         HsaSignalCallbackFunction function =
-                            [] (const uint64_t &) { });
-    void updateHsaSignalAsync(Addr signal_handle, int64_t diff);
+                         uint16_t vmid, HsaSignalCallbackFunction function);
+    void updateHsaSignalAsync(Addr signal_handle, int64_t diff, uint16_t vmid,
+                              Event *done_event);
     void updateHsaSignalData(Addr value_addr, int64_t diff,
-                             uint64_t *prev_value);
-    void updateHsaSignalDone(uint64_t *signal_value);
-    void updateHsaMailboxData(Addr signal_handle, uint64_t *mailbox_value);
-    void updateHsaEventData(Addr signal_handle, uint64_t *event_value);
-    void updateHsaEventTs(Addr signal_handle, amd_event_t *event_value);
-
+                             uint64_t *prev_value, bool has_event_value,
+                             uint64_t event_value, uint16_t vmid,
+                             Event *done_event);
+    void updateHsaSignalDone(uint64_t *signal_value, Event *done_event);
+    void updateHsaMailboxData(Addr signal_handle, uint64_t *mailbox_value,
+                              int64_t diff, uint16_t vmid, Event *done_event);
+    void updateHsaEventData(Addr signal_handle, Addr signal_slot_addr,
+                            uint64_t *event_value, int64_t diff, uint16_t vmid,
+                            Event *done_event);
+    void updateHsaEventTs(Addr signal_handle, amd_event_t *event_value,
+                          bool has_event_value, uint64_t event_id,
+                          int64_t diff, uint16_t vmid, Event *done_event);
     uint64_t functionalReadHsaSignal(Addr signal_handle);
 
     Addr getHsaSignalValueAddr(Addr signal_handle)
@@ -163,11 +173,15 @@ class GPUCommandProcessor : public DmaVirtDevice
     VegaISA::Walker *walker;
 
     // Typedefing dmaRead and dmaWrite function pointer
-    typedef void (DmaDevice::*DmaFnPtr)(Addr, int, Event*, uint8_t*, Tick);
+    typedef void (DmaDevice::*DmaFnPtr)(Addr, int, Event *, uint8_t *, Tick);
     void initABI(HSAQueueEntry *task);
     void sanityCheckAKC(AMDKernelCode *akc);
     HSAPacketProcessor *hsaPP;
     TranslationGenPtr translate(Addr vaddr, Addr size) override;
+    void dmaReadVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                            void *data, uint16_t vmid, Tick delay = 0);
+    void dmaWriteVirtForVMID(Addr host_addr, unsigned size, DmaCallback *cb,
+                             void *data, uint16_t vmid, Tick delay = 0);
 
     // Running counter of dispatched tasks
     int dynamic_task_id = 0;
@@ -180,6 +194,11 @@ class GPUCommandProcessor : public DmaVirtDevice
 
     // Keep track of start times for task dispatches.
     std::unordered_map<Addr, Tick> dispatchStartTime;
+
+    // Keep track of VMID for each dispatch's completion signal.
+    std::unordered_map<Addr, uint16_t> dispatchVMID;
+
+    uint16_t currentDMAVMID = 1;
 
     /**
      * Perform a DMA read of the read_dispatch_id_field_base_byte_offset
@@ -214,8 +233,8 @@ class GPUCommandProcessor : public DmaVirtDevice
         auto *mqdDmaEvent = new DmaVirtCallback<int>(
             [ = ] (const int &) { MQDDmaEvent(task); });
 
-        dmaReadVirt(task->hostAMDQueueAddr,
-                    sizeof(_amd_queue_t), mqdDmaEvent, &task->amdQueue);
+        dmaReadVirtForVMID(task->hostAMDQueueAddr, sizeof(_amd_queue_t),
+                           mqdDmaEvent, &task->amdQueue, task->vmid());
     }
 
     /**
@@ -262,8 +281,9 @@ class GPUCommandProcessor : public DmaVirtDevice
                     task->privMemPerItem());
 
             updateHsaSignal(task->amdQueue.queue_inactive_signal.handle, 1,
-                            [ = ] (const uint64_t &dma_buffer)
-                                { WaitScratchDmaEvent(task, dma_buffer); });
+                            task->vmid(), [=](const uint64_t &dma_buffer) {
+                                WaitScratchDmaEvent(task, dma_buffer);
+                            });
 
         } else {
             DPRINTF(GPUCommandProc, "Sufficient scratch space, launching "
@@ -296,8 +316,8 @@ class GPUCommandProcessor : public DmaVirtDevice
             auto cb = new DmaVirtCallback<int>(
                 [ = ] (const int &) { MQDDmaEvent(task); });
 
-            dmaReadVirt(task->hostAMDQueueAddr, sizeof(_amd_queue_t), cb,
-                        &task->amdQueue);
+            dmaReadVirtForVMID(task->hostAMDQueueAddr, sizeof(_amd_queue_t),
+                               cb, &task->amdQueue, task->vmid());
         } else {
             /**
             * Poll until runtime signals us that scratch space has been
@@ -318,7 +338,8 @@ class GPUCommandProcessor : public DmaVirtDevice
              * in the event queue if the allocation is not completed by the
              * first time this is called.
              */
-            dmaReadVirt(value_addr, sizeof(Addr), cb, &cb->dmaBuffer, 1e9);
+            dmaReadVirtForVMID(value_addr, sizeof(Addr), cb, &cb->dmaBuffer,
+                               task->vmid(), 1e9);
         }
     }
 

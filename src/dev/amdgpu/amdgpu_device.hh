@@ -156,7 +156,9 @@ class AMDGPUDevice : public PciEndpoint
     std::unordered_map<Addr, uint16_t> doorbellVMIDMap;
     // map of vmid to all queue ids using that vmid
     std::unordered_map<uint16_t, std::set<int>> usedVMIDs;
-    // last vmid allocated by map_process PM4 packet
+    // Last VMID allocated by a map_process PM4 packet. This is only a
+    // compatibility fallback for MAP_QUEUES packets that do not carry a VMID;
+    // it is not a queue-local identity and is unsafe for interleaved PASIDs.
     uint16_t _lastVMID;
 
     /*
@@ -243,7 +245,14 @@ class AMDGPUDevice : public PciEndpoint
     RequestorID vramRequestorId() { return gpuMemMgr->getRequestorID(); }
 
     /* HW context stuff */
+    // MI300X KFD allocates compute VMIDs from 8 (first_vmid_kfd).
+    // VMIDs 0-7 are reserved for gfx/internal use.
+    static constexpr uint16_t AMDGPU_FIRST_COMPUTE_VMID = 8;
+
+    // Returns the global "most recently allocated" VMID. Prefer explicit
+    // queue/PASID VMID plumbing whenever the caller can identify the owner.
     uint16_t lastVMID() { return _lastVMID; }
+    uint16_t pasidFromVMID(uint16_t vmid);
     uint16_t allocateVMID(uint16_t pasid);
     void deallocateVmid(uint16_t vmid);
     void deallocatePasid(uint16_t pasid);
@@ -252,6 +261,7 @@ class AMDGPUDevice : public PciEndpoint
     uint16_t getVMID(Addr doorbell) { return doorbellVMIDMap[doorbell]; }
     std::unordered_map<uint16_t, std::set<int>>& getUsedVMIDs();
     void insertQId(uint16_t vmid, int id);
+    void removeQId(uint16_t vmid, int id);
 
     /* Co-simulation bridge accessor */
     void
